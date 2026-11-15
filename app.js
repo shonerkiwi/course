@@ -9,10 +9,10 @@ if (Q.has('reset')) localStorage.removeItem(KEY);
 
 const DOW = [1, 3, 6];            // lundi, mercredi, samedi
 const HOUR = 8, MIN = 30;         // 8h30
-const P = { ok: 100, time: 50, streak: 10, streakCap: 10, late: 60, walk: 40, extra: 60, miss: 150, quest: 150,
+const P = { ok: 100, time: 50, streak: 10, streakCap: 10, late: 60, walk: 40, extra: 60, miss: 150, quest: 150, indoor: 70, stretch: 10,
             weighMon: 30, weigh: 15, weighMiss: 40, kg: 50, form: 100, foodMiss: 10 };
-const PACE = { walk: 5.5 / 3.6, run: 8 / 3.6 };   // m/s, pour estimer les distances
-const MET = { walk: 4.3, run: 8.3 };               // dépense : MET × kg × heures
+const PACE = { walk: 5.5 / 3.6, run: 8 / 3.6, ex: 0, rest: 0, st: 0 };   // m/s, pour estimer les distances
+const MET = { walk: 4.3, run: 8.3, ex: 5.5, rest: 3, st: 2.3 };               // dépense : MET × kg × heures
 const KCAL_KG = 7700;                              // kcal pour 1 kg de graisse
 // IMC des hommes adultes en France (étude Esteban, Santé publique France : 54 % au-dessus de 25, 17 % au-dessus de 30)
 const BMI_MED = 25.4, BMI_SIG = 0.173;
@@ -81,7 +81,7 @@ const curKg = s => s.weights[s.weights.length - 1].kg;
 const lost = s => s.weights[0].kg - curKg(s);
 const weighedThisWeek = () => { const m = monday(today()); return S.weights.some(w => w.d >= m); };
 const tot = s => s.log.reduce((a, e) => { a.km += e.km || 0; a.kcal += e.kcal || 0; a.min += e.min || 0; if (e.k === 'walk') a.walks++; return a; }, { km: 0, kcal: 0, min: 0, walks: 0 });
-function addPts(n) { S.points = Math.max(0, S.points + n); }
+function addPts(n) { const v = Math.max(0, S.points + n); (S.pl = S.pl || []).push([today(), v - S.points]); S.points = v; }
 const ecarts = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0), 0);
 const fkcal = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0) * f[4], 0);
 const fsugar = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0) * f[5], 0);
@@ -143,7 +143,7 @@ function settle() {
 /* ---------- séances ---------- */
 function finalize(ph, o) {
   let total = 0, dist = 0; ph.forEach(p => { total += p.d; dist += p.d * PACE[p.t]; });
-  let half = 0, acc = 0; for (const p of ph) { const d = p.d * PACE[p.t]; if (acc + d >= dist / 2) { half += (dist / 2 - acc) / PACE[p.t]; break; } acc += d; half += p.d; }
+  let half = dist ? 0 : Infinity, acc = 0; if (dist) for (const p of ph) { const d = p.d * PACE[p.t]; if (acc + d >= dist / 2) { half += (dist / 2 - acc) / PACE[p.t]; break; } acc += d; half += p.d; }
   return Object.assign({ ph, total, dist, half, kcal: kg => ph.reduce((a, p) => a + MET[p.t] * kg * p.d / 3600, 0) }, o);
 }
 function build(i) {
@@ -159,6 +159,26 @@ function build(i) {
   return finalize(ph, { week: w, num: s + 1, title, name: `Niveau ${w} · séance ${s + 1}`, sub: (reps > 1 ? `${dur(walk)} de marche entre chaque, ` : '') + '10 min de marche active pour finir' });
 }
 const buildWalk = () => finalize([{ t: 'walk', d: 2400, l: 'Marche active' }], { title: '40 min de marche active', name: 'Marche active', sub: 'Pas rapide, d’une traite. Zéro choc, et ça brûle.', walkOnly: true });
+function buildIndoor() {
+  const ph = [{ t: 'rest', d: 180, l: 'Échauffement', h: 'Marche sur place, genoux un peu hauts, bras actifs' }];
+  const C = [['Montées de marche', 60, 'Sur une marche ou la 1re marche d’escalier : monte, descends, change de jambe. Pas de marche : genoux hauts, lentement'],
+    ['Squats sur chaise', 45, 'Assis-debout sans les mains, dos droit, poids sur les talons'],
+    ['Pompes au mur', 40, 'Mains sur le mur à hauteur d’épaules, corps bien droit'],
+    ['Gainage', 30, 'Sur les avant-bras, genoux au sol si besoin, dos plat']];
+  for (let r = 0; r < 3; r++) C.forEach((c, k) => { ph.push({ t: 'ex', d: c[1], l: c[0], h: c[2], n: r + 1, of: 3 }); ph.push({ t: 'rest', d: k === 3 ? 45 : 20, l: 'Récupère', h: 'Respire, marche sur place' }); });
+  ph[ph.length - 1] = { t: 'rest', d: 120, l: 'Retour au calme', h: 'Marche lente sur place, respire profondément' };
+  return finalize(ph, { title: 'Plan B à la maison', name: 'Plan B · à la maison', sub: '3 tours : marche, squats, pompes au mur, gainage', indoor: true });
+}
+function buildStretch() {
+  const L_ = [['Mollet droit', 30, 'Mains au mur, jambe droite tendue derrière, talon au sol'], ['Mollet gauche', 30, 'Même chose, jambe gauche'],
+    ['Cuisse droite', 30, 'Debout, attrape ta cheville droite, talon vers la fesse'], ['Cuisse gauche', 30, 'Même chose à gauche'],
+    ['Arrière des cuisses', 40, 'Talon sur une marche, jambe tendue, penche le buste dos droit'],
+    ['Fessier droit', 30, 'Assis, cheville droite sur le genou gauche, penche-toi en avant'], ['Fessier gauche', 30, 'Même chose de l’autre côté'],
+    ['Hanche droite', 30, 'Fente basse, genou droit au sol, pousse le bassin vers l’avant'], ['Hanche gauche', 30, 'Même chose, genou gauche au sol'],
+    ['Dos et respiration', 30, 'Bras tendus au-dessus de la tête, grandis-toi, respire lentement']];
+  return finalize(L_.map(([l, d, h]) => ({ t: 'st', d, l, h })), { title: 'Étirements', name: 'Étirements · 5 min', stretch: true });
+}
+const buildSes = o => o.kind === 'stretch' ? buildStretch() : o.indoor ? buildIndoor() : o.kind === 'walk' ? buildWalk() : build(S.prog);
 const info = s => `${Math.round(s.total / 60)} min · ≈ ${dec(s.dist / 1000)} km · ≈ ${big(s.kcal(curKg(S)))} kcal`;
 
 /* projection du poids sur n semaines si tout est respecté */
@@ -238,12 +258,12 @@ function home() {
     <div id="wx" data-d="${today()}">${wxHtml(today())}</div>
     <div class="gain"><span class="chip">+${P.ok} séance</span><span class="chip ${mins > 9 * 60 + 30 ? 'off' : ''}">+${P.time} à l’heure</span><span class="chip">+${sb} série</span></div>
     <button class="btn pulse" id="go">C’est parti</button>
-    ${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker (malade, blessé…)</button>' : ''}</div>`;
+    ${planBBtn()}${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker (malade, blessé…)</button>' : ''}</div>`;
   else if (m === 'late') main = `<div class="card late"><h2>Rattrapage · dernière chance</h2>
     <div class="big">Tu as sauté la séance d’hier</div>
     <p>Fais-la aujourd’hui : +${P.late} LP et ta série est sauvée. Sinon, −${P.miss} LP à minuit.<br>${ses.title} · ${info(ses)}</p>
     <button class="btn pulse" id="go">Je rattrape maintenant</button>
-    ${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker</button>' : ''}</div>`;
+    ${planBBtn()}${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker</button>' : ''}</div>`;
   else { const d = nextRdv(), wk = buildWalk(); main = `<div class="card"><h2>Prochain rendez-vous</h2>
     <div class="big" style="text-transform:capitalize">${frDate(d)} · 8h30</div>
     <p>Dans <span class="count" id="cd"></span> · ${ses.title}</p><div id="wx" data-d="${d}">${wxHtml(d)}</div></div>
@@ -275,6 +295,7 @@ function home() {
   if ($('#go')) $('#go').onclick = () => startRun(m);
   if ($('#free')) $('#free').onclick = () => startRun('walk');
   if ($('#jk')) $('#jk').onclick = joker;
+  if ($('#pb')) $('#pb').onclick = () => planB(m);
   if ($('#wg')) $('#wg').onclick = weigh;
   $('#impro').onclick = impro; bindFood(); loadWx();
   if ($('#bk')) $('#bk').onclick = () => { tab = 'rules'; render(); };
@@ -347,8 +368,25 @@ async function impro() {
     ${free ? `<button class="btn run" data-r="extra">Course · ${ses.title}<small>${info(ses)} · +${done ? 0 : P.extra} LP</small></button>`
       : '<p style="color:var(--gold);font-weight:800">Ta séance du jour n’est pas faite : elle passe d’abord. Ici, seulement de la marche.</p>'}
     <button class="btn sec" data-r="walk">Marche active · 40 min<small>${info(wk)} · +${done ? 0 : P.walk} LP</small></button>
+    <button class="btn sec" data-r="stretch">Étirements · 5 min<small>${S.log.some(e => e.d === today() && e.k === 'stretch') ? 'déjà faits aujourd’hui, sans LP' : '+' + P.stretch + ' LP'}</small></button>
     <button class="btn ghost" data-r="n">Annuler</button>`);
-  if (r === 'extra' || r === 'walk') startRun(r);
+  if (r === 'extra' || r === 'walk' || r === 'stretch') startRun(r);
+}
+const planBUsed = () => S.log.some(e => e.indoor && e.d >= monday(today()));
+const planBBtn = () => planBUsed() ? '<p class="pbu">Plan B déjà utilisé cette semaine.</p>' : '<button class="btn sec pbb" id="pb">🌧️ Plan B : la séance à la maison</button>';
+async function planB(m) {
+  const ses = buildIndoor();
+  const [r] = await modal(`<div class="ico">🏠</div><h3>Plan B à la maison</h3>
+    <p>Pluie, verglas, nuit trop courte… La séance du jour devient ${Math.round(ses.total / 60)} minutes d’exercices chez toi : montées de marche, squats sur chaise, pompes au mur, gainage. Rien à acheter.</p>
+    <p><b style="color:var(--txt)">+${m === 'due' ? P.indoor : P.late} LP</b>, ta série continue, mais ton niveau de course n’avance pas. <b style="color:var(--txt)">Une fois par semaine</b> maximum.</p>
+    <button class="btn run" data-r="y">Lancer le plan B</button><button class="btn sec" data-r="n">Non, je sors</button>`);
+  if (r === 'y') startRun(m, null, true);
+}
+async function offerStretch() {
+  if (S.log.some(e => e.d === today() && e.k === 'stretch')) return;
+  const [r] = await modal(`<div class="ico">🧘</div><h3>5 minutes d’étirements ?</h3><p>Guidés, juste après l’effort : moins de courbatures demain. +${P.stretch} LP.</p>
+    <button class="btn run" data-r="y">C’est parti</button><button class="btn sec" data-r="n">Pas maintenant</button>`);
+  if (r === 'y') startRun('stretch');
 }
 async function joker() {
   const [r] = await modal(`<div class="ico">🃏</div><h3>Utiliser un joker ?</h3><p>La séance est excusée : pas de LP, pas de sanction, ta série est conservée. Il t’en reste ${S.jokers}. Tu en regagnes un toutes les 4 séances.</p>
@@ -376,18 +414,18 @@ let R = null, raf = 0, wl = null, lockT = 0;
 const elapsed = () => ((R.pausedAt || Date.now()) - R.start - R.paused) / 1000 * SPEED;
 async function wake() { try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
 document.addEventListener('visibilitychange', () => { if (R && document.visibilityState === 'visible') wake(); });
-function armLock() { clearTimeout(lockT); lockT = setTimeout(() => { if (R && !R.pausedAt && $('#modal').hidden) $('#lock').hidden = false; }, 7000); }
-function startRun(kind, resume) {
+function armLock() { clearTimeout(lockT); lockT = setTimeout(() => { if (R && R.ses.dist && !R.pausedAt && $('#modal').hidden) $('#lock').hidden = false; }, 7000); }
+function startRun(kind, resume, indoor) {
   const n = now(), mins = n.getHours() * 60 + n.getMinutes();
-  R = resume || { kind, start: Date.now(), paused: 0, pausedAt: null, onTime: kind === 'due' && mins >= 8 * 60 && mins <= 9 * 60 + 30, for: kind === 'late' ? pending() : today(), day: today() };
-  R.ses = R.kind === 'walk' ? buildWalk() : build(S.prog); R.idx = -1; R.half = resume ? elapsed() > R.ses.half : false; R.sec = -1; R.gps = 0; R.last = null;
-  S.run = { kind: R.kind, start: R.start, paused: R.paused, pausedAt: R.pausedAt, onTime: R.onTime, for: R.for, day: R.day }; save();
+  R = resume || { kind, start: Date.now(), paused: 0, pausedAt: null, onTime: kind === 'due' && mins >= 8 * 60 && mins <= 9 * 60 + 30, for: kind === 'late' ? pending() : today(), day: today(), indoor: !!indoor };
+  R.ses = buildSes(R); R.idx = -1; R.half = resume ? elapsed() > R.ses.half : false; R.sec = -1; R.gps = 0; R.last = null;
+  S.run = { kind: R.kind, start: R.start, paused: R.paused, pausedAt: R.pausedAt, onTime: R.onTime, for: R.for, day: R.day, indoor: R.indoor }; save();
   beep(880, 120); buzz(200); wake();
-  if (navigator.geolocation && SPEED === 1) R.gw = navigator.geolocation.watchPosition(p => { if (!R || p.coords.accuracy > 30) return;
+  if (navigator.geolocation && SPEED === 1 && R.ses.dist) R.gw = navigator.geolocation.watchPosition(p => { if (!R || p.coords.accuracy > 30) return;
     const ll = L.latLng(p.coords.latitude, p.coords.longitude); if (R.last) { const d = R.last.distanceTo(ll); if (d < 4) return; if (d < 150 && !R.pausedAt) R.gps += d; } R.last = ll; }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
   const el = $('#run'); el.hidden = false;
-  el.innerHTML = `<div class="top"><b>${R.ses.name}</b><div class="tbar"><i id="tb"></i><u style="left:${R.ses.half / R.ses.total * 100}%"></u></div>
-    <div class="tot"><span id="te">0:00</span><span id="km">demi-tour au repère</span><span>${fmt(R.ses.total)}</span></div></div>
+  el.innerHTML = `<div class="top"><b>${R.ses.name}</b><div class="tbar"><i id="tb"></i>${isFinite(R.ses.half) ? `<u style="left:${R.ses.half / R.ses.total * 100}%"></u>` : ''}</div>
+    <div class="tot"><span id="te">0:00</span><span id="km">${R.ses.dist ? 'demi-tour au repère' : R.ses.stretch ? 'étirements' : 'à la maison'}</span><span>${fmt(R.ses.total)}</span></div></div>
     <div class="ring" id="ring"><svg viewBox="0 0 100 100"><circle class="tk" cx="50" cy="50" r="47.5"/><circle class="bg" cx="50" cy="50" r="39"/><circle class="fg" id="fg" cx="50" cy="50" r="39" stroke-dasharray="245.04" stroke-dashoffset="0"/></svg>
       <div class="in"><div class="ph" id="ph"></div><div class="tm" id="tm"></div><div class="rep" id="rp"></div></div></div>
     <div class="nxt" id="nx"></div>
@@ -409,13 +447,16 @@ function loop() {
   let acc = 0, i = 0; while (e >= acc + ses.ph[i].d) acc += ses.ph[i++].d;
   const ph = ses.ph[i], left = ph.d - (e - acc);
   if (i !== R.idx) { R.idx = i; $('#run').className = ph.t;
-    $('#ph').textContent = ph.t === 'run' ? 'Cours' : ph.l; $('#ph').style.fontSize = ph.l.length > 8 ? '21px' : ''; $('#rp').textContent = ph.n && ph.of > 1 ? `course ${ph.n} / ${ph.of}` : '';
-    const nx = ses.ph[i + 1]; $('#nx').textContent = nx ? `Ensuite : ${nx.t === 'run' ? 'course' : nx.l.toLowerCase()} ${dur(nx.d)}` : 'Dernière ligne droite, tu rentres';
+    const lab = ph.t === 'run' ? 'Cours' : ph.l; $('#ph').textContent = lab; $('#ph').style.fontSize = lab.length > 12 ? '17px' : lab.length > 8 ? '21px' : '';
+    $('#rp').textContent = ph.n && ph.of > 1 ? (ph.t === 'run' ? `course ${ph.n} / ${ph.of}` : `tour ${ph.n} / ${ph.of}`) : '';
+    const nx = ses.ph[i + 1], nxt = nx ? `Ensuite : ${nx.t === 'run' ? 'course' : nx.l.toLowerCase()} ${dur(nx.d)}` : ses.dist ? 'Dernière ligne droite, tu rentres' : 'Dernière ligne droite';
+    $('#nx').innerHTML = (ph.h ? `<b>${ph.h}</b><br>` : '') + nxt;
     $('#ring').classList.remove('flash'); void $('#ring').offsetWidth; $('#ring').classList.add('flash');
-    if (ph.t === 'run') { beep(880, 150); beep(1320, 260, .18); signal('run'); say('Cours'); }
-    else { beep(660, 380); if (i > 0) signal('walk'); say(i === 0 ? ph.l + ', marche' : ph.l); } }
+    if (ph.t === 'run' || ph.t === 'ex') { beep(880, 150); beep(1320, 260, .18); signal('run'); say(lab); }
+    else if (ph.t === 'st') { beep(740, 200); buzz([300, 150, 300]); say(lab); }
+    else { beep(660, 380); if (i > 0) signal('walk'); say(i === 0 && ph.t === 'walk' ? ph.l + ', marche' : ph.l); } }
   const sec = Math.ceil(left); if (sec !== R.sec) { R.sec = sec; if (sec <= 3 && sec > 0 && SPEED === 1) beep(520, 80);
-    $('#lk').innerHTML = `<b>${ph.t === 'run' ? 'COURS' : 'MARCHE'}</b> ${fmt(left)}`; if (R.gps > 50) $('#km').textContent = dec(R.gps / 1000, 2) + ' km'; }
+    $('#lk').innerHTML = `<b>${ph.t === 'run' ? 'COURS' : ph.t === 'walk' ? 'MARCHE' : ph.l.toUpperCase()}</b> ${fmt(left)}`; if (R.gps > 50) $('#km').textContent = dec(R.gps / 1000, 2) + ' km'; }
   if (!R.half && e >= ses.half) { R.half = true; beep(990, 200); beep(990, 200, .3); signal('half'); say('Demi-tour');
     const b = document.createElement('div'); b.className = 'banner'; b.textContent = '↩ Demi-tour'; $('#run').appendChild(b); setTimeout(() => b.remove(), 3600); }
   $('#tm').textContent = fmt(left); $('#te').textContent = fmt(e);
@@ -434,23 +475,30 @@ async function finish(frac) {
   const r = R, ses = r.ses, before = S.points, arr = [], kg = curKg(S), est = ses.dist * frac;
   const km = (r.gps > est * .6 && r.gps < est * 1.6 ? r.gps : est) / 1000, kcal = Math.round(ses.kcal(kg) * frac), min = Math.round(ses.total * frac / 60);
   endRun(); say('Séance terminée. Bravo.'); signal('end');
+  if (r.kind === 'stretch') { const p = S.log.some(e => e.d === r.day && e.k === 'stretch') ? 0 : P.stretch;
+    addPts(p); S.log.push({ d: r.day, k: 'stretch', pts: p, min, kcal }); save(); tab = 'home'; setTab();
+    return result('Étirements faits', '🧘', [['Étirements', p]], before, '<p>Moins de courbatures demain.</p>'); }
   const bonusDone = S.log.some(e => e.d === r.day && (e.k === 'walk' || e.k === 'extra'));
   if (r.kind === 'walk' || r.kind === 'extra') { const p = bonusDone ? 0 : r.kind === 'walk' ? P.walk : P.extra;
     addPts(p); arr.push([r.kind === 'walk' ? 'Marche active' : 'Course à l’improviste', p]); S.log.push(Object.assign({ d: r.day, k: r.kind, pts: p, min, km, kcal }, r.kind === 'extra' ? { lvl: S.prog } : {})); }
   else {
     let pts = 0;
-    if (r.kind === 'due') { pts += P.ok; arr.push(['Séance faite le bon jour', P.ok]); if (r.onTime) { pts += P.time; arr.push(['Départ à l’heure', P.time]); } }
+    if (r.indoor) { const b0 = r.kind === 'due' ? P.indoor : P.late; pts += b0; arr.push([r.kind === 'due' ? 'Plan B à la maison' : 'Séance rattrapée à la maison', b0]); }
+    else if (r.kind === 'due') { pts += P.ok; arr.push(['Séance faite le bon jour', P.ok]); if (r.onTime) { pts += P.time; arr.push(['Départ à l’heure', P.time]); } }
     else { pts += P.late; arr.push(['Séance rattrapée', P.late]); }
     S.streak++; S.best = Math.max(S.best, S.streak);
     if (r.kind === 'due') { const b = P.streak * Math.min(S.streak, P.streakCap); pts += b; arr.push([`Série de ${S.streak}`, b]); }
     addPts(pts); S.done++;
-    S.log.push({ d: r.day, for: r.for, k: r.kind === 'due' ? 'ok' : 'late', pts, onTime: r.onTime, min, km, kcal, lvl: S.prog });
+    S.log.push(Object.assign({ d: r.day, for: r.for, k: r.kind === 'due' ? 'ok' : 'late', pts, onTime: r.onTime, min, km, kcal }, r.indoor ? { indoor: true } : { lvl: S.prog }));
     if (S.done % 4 === 0 && S.jokers < 2) { S.jokers++; arr.push(['Joker gagné 🃏', 0]); }
   }
-  const q = questState(); if (!q.done && q.runs >= 3 && q.walks >= 2) { S.quests[q.m] = 1; addPts(P.quest); arr.push(['Quête de la semaine', P.quest]); }
+  const q = questState(); if (!q.done && q.runs >= 3 && q.walks >= 2) { S.quests[q.m] = 1; addPts(P.quest); arr.push(['Quête de la semaine', P.quest]); S.log.push({ d: r.day, k: 'quest', pts: P.quest }); }
   save(); tab = 'home'; setTab();
-  const extra = `<div class="sum"><div><b>${dec(km)}</b>km</div><div><b>${kcal}</b>kcal</div><div><b>${min}</b>min</div></div>`;
-  if (r.kind === 'walk' || r.kind === 'extra') return result(r.kind === 'walk' ? 'Marche validée' : 'Course bonus validée', r.kind === 'walk' ? '🚶' : '⚡', arr, before, extra);
+  const extra = r.indoor ? `<div class="sum"><div><b>${min}</b>min</div><div><b>${kcal}</b>kcal</div><div><b>${S.streak}</b>série</div></div>`
+    : `<div class="sum"><div><b>${dec(km)}</b>km</div><div><b>${kcal}</b>kcal</div><div><b>${min}</b>min</div></div>`;
+  if (r.indoor) return result('Plan B validé', '🏠', arr, before, extra + '<p>Ta série continue. Le niveau reste le même : la course, ça se travaille dehors.</p>');
+  if (r.kind === 'walk') return result('Marche validée', '🚶', arr, before, extra);
+  if (r.kind === 'extra') { await result('Course bonus validée', '⚡', arr, before, extra); return offerStretch(); }
   /* ressenti : ajuste la suite */
   const [f] = await modal(`<div class="ico">🎉</div><h3>Séance validée</h3>${extra}<p>C’était comment ? La prochaine séance s’adapte à ta réponse.</p>
     <div class="feel"><button data-r="easy"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><circle cx="23" cy="28" r="6" fill="#fff"/><circle cx="41" cy="28" r="6" fill="#fff"/><circle cx="24" cy="29" r="2.6" fill="#12140f"/><circle cx="42" cy="29" r="2.6" fill="#12140f"/><path d="M20 41q12 12 24 0" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Facile</button><button data-r="ok"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><circle cx="23" cy="28" r="6" fill="#fff"/><circle cx="41" cy="28" r="6" fill="#fff"/><circle cx="24" cy="29" r="2.6" fill="#12140f"/><circle cx="42" cy="29" r="2.6" fill="#12140f"/><path d="M22 44h20" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Correct</button><button data-r="hard"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><path d="M17 27h12M35 27h12" stroke="#12140f" stroke-width="4" stroke-linecap="round"/><path d="M21 47q11-9 22 0" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Dur</button></div>`);
@@ -458,7 +506,7 @@ async function finish(frac) {
   if (f === 'hard' && l2.length === 2 && l2.every(x => x === 'hard')) { msg = 'Deux séances dures : tu refais la même, c’est normal et c’est comme ça qu’on progresse.'; S.feels.push('reset'); }
   else if (l3.length === 3 && l3.every(x => x === 'easy')) { S.prog += 2; msg = 'Trois séances faciles : tu sautes un cran.'; S.feels.push('reset'); }
   else S.prog++;
-  save(); result('Bien joué', '🏅', arr, before, msg ? `<p>${msg}</p>` : '');
+  save(); await result('Bien joué', '🏅', arr, before, msg ? `<p>${msg}</p>` : ''); offerStretch();
 }
 
 /* ---------- trajets ---------- */
@@ -524,7 +572,7 @@ function planView() {
     if (isSched(d)) { const m = monday(d);
       if (m !== wk) { wk = m; h += `<div class="wk">Semaine du ${frDate(m, { day: 'numeric', month: 'long' })}</div>`; }
       const r = rec(d), name = frDate(d, { weekday: 'long', day: 'numeric', month: 'long' });
-      if (r) h += `<div class="row ${r.k}"><div class="dot">${ic[r.k]}</div><div class="t"><b>${name}</b><span>${lab[r.k]}${r.onTime ? ' · à l’heure' : ''}${r.km ? ' · ' + dec(r.km) + ' km · ' + r.kcal + ' kcal' : ''}</span></div><div class="p ${r.pts < 0 ? 'minus' : 'plus'}">${r.pts > 0 ? '+' : ''}${r.pts || ''}</div></div>`;
+      if (r) h += `<div class="row ${r.k}"><div class="dot">${ic[r.k]}</div><div class="t"><b>${name}</b><span>${r.indoor ? 'Plan B à la maison' : lab[r.k]}${r.onTime ? ' · à l’heure' : ''}${r.km ? ' · ' + dec(r.km) + ' km · ' + r.kcal + ' kcal' : ''}</span></div><div class="p ${r.pts < 0 ? 'minus' : 'plus'}">${r.pts > 0 ? '+' : ''}${r.pts || ''}</div></div>`;
       else { const s = build(up++), nx = !nextSet && d >= addDays(t, -1); if (nx) nextSet = true;
         h += `<div class="row ${nx ? 'next' : ''}"><div class="dot">${s.week}.${s.num}</div><div class="t"><b>${name} · 8h30</b><span>${s.title}<br>${Math.round(s.total / 60)} min · ≈ ${dec(s.dist / 1000)} km</span></div></div>`; }
       i++; }
@@ -564,6 +612,8 @@ function statsView() {
   $('#view').innerHTML = `
   <div class="tiles"><div class="tile"><b>${dec(T.km)}</b><span>km parcourus</span></div><div class="tile"><b>${big(T.kcal)}</b><span>kcal brûlées</span></div>
     <div class="tile"><b>${Math.floor(T.min / 60)} h ${pad(T.min % 60)}</b><span>dehors</span></div><div class="tile"><b>${S.done + S.log.filter(e => e.k === 'extra').length}<small> + ${T.walks}</small></b><span>courses + marches</span></div></div>
+  <div class="duo"><button class="btn sec" id="rcp">📊 Récap de la semaine</button><button class="btn run" id="shr">📤 Partager</button></div>
+  ${calCard()}
   <div class="card"><h2>Kilomètres par semaine</h2>${weekBars()}<p>Tes calories brûlées valent ${big(T.kcal / KCAL_KG * 1000)} g de graisse.</p></div>
   <div class="card"><h2>Poids · prévision sur 12 semaines</h2><div class="big">${dec(kg)} kg <small style="color:var(--run)">${lost(S) > 0 ? '−' + dec(lost(S)) + ' kg' : ''}</small></div>
     ${chart()}
@@ -577,7 +627,8 @@ function statsView() {
     <p>À partir de Platine, tu es plus léger que la moyenne des hommes en France. Le classement s’arrête à Master : descendre plus bas n’apporte rien.</p></div>
   <div class="card"><h2>Pesées</h2>${S.weights.slice().reverse().map((x, i, a) => { const pv = a[i + 1], df = pv ? x.kg - pv.kg : 0;
     return `<div class="rule"><span style="text-transform:capitalize">${frDate(x.d, { weekday: 'short', day: 'numeric', month: 'short' })}</span><b class="${df < 0 ? 'plus' : df > 0 ? 'minus' : ''}">${dec(x.kg)} kg${pv ? ' (' + (df > 0 ? '+' : df < 0 ? '−' : '') + dec(Math.abs(df)) + ')' : ''}</b></div>`; }).join('')}</div>`;
-  $('#wg').onclick = weigh;
+  $('#wg').onclick = weigh; bindCal();
+  $('#rcp').onclick = () => recap(monday(today()), true); $('#shr').onclick = shareCard;
 }
 
 function foodWeek() {
@@ -599,6 +650,87 @@ function recordsCard() {
     ['📅', 'Meilleure semaine', bw ? dec(bw) + ' km' : '—'], ['🔥', 'Plus longue série', S.best + ' séance' + (S.best > 1 ? 's' : '')], ['🥗', 'Jours propres d’affilée', clean + ' j'],
     ['⚖️', 'Poids le plus bas', dec(low) + ' kg']];
   return `<div class="card"><h2>Records</h2><div class="recs">${R.map(r => `<div><span>${r[0]}</span><small>${r[1]}</small><b>${r[2]}</b></div>`).join('')}</div></div>`;
+}
+
+/* ---------- calendrier ---------- */
+let calM = null;
+function calCard() {
+  const t = today(), ym = calM || t.slice(0, 7), first = ym + '-01', d0 = parse(first), last = ymd(new Date(d0.getFullYear(), d0.getMonth() + 1, 0)), end = addDays(monday(last), 6);
+  let cells = '';
+  for (let d = monday(first); d <= end; d = addDays(d, 1)) {
+    const on = k => S.log.find(e => e.d === d && k.includes(e.k)), run = on(['ok', 'late', 'extra']), f = S.food[d];
+    const c = run ? (run.indoor ? 'in' : 'run') : on(['walk']) ? 'walk' : on(['miss']) ? 'miss' : S.log.some(e => (e.for || e.d) === d && e.k === 'joker') ? 'jok' : '';
+    const n = f && f.v ? ecarts(f) : -1;
+    cells += `<div class="cd ${c}${d.slice(0, 7) !== ym ? ' out' : ''}${d === t ? ' today' : ''}${!c && isSched(d) && d >= t ? ' sched' : ''}"><span>${+d.slice(8)}</span>${n >= 0 ? `<i class="${n === 0 ? 'good' : n >= 3 ? 'bad' : 'meh'}"></i>` : ''}</div>`;
+  }
+  return `<div class="card cal"><div class="calh"><button data-cm="-1" aria-label="Mois précédent">‹</button><h2>${d0.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</h2><button data-cm="1" aria-label="Mois suivant">›</button></div>
+    <div class="calg">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => `<em>${x}</em>`).join('')}${cells}</div>
+    <div class="leg"><span style="--c:var(--run)">Course</span><span style="--c:var(--walk)">Marche</span><span style="--c:#fff">Plan B</span><span style="--c:var(--bad)">Ratée</span><span style="--c:#5a5f66">Joker</span></div>
+    <p class="calp">Cases pointillées : séances à venir. Point sous le jour : <b style="color:var(--run)">●</b> journée propre, <b style="color:var(--gold)">●</b> 1 ou 2 écarts, <b style="color:var(--bad)">●</b> 3 et plus.</p></div>`;
+}
+function bindCal() { document.querySelectorAll('[data-cm]').forEach(b => b.onclick = () => {
+  const [y, mo] = (calM || today().slice(0, 7)).split('-').map(Number); calM = ymd(new Date(y, mo - 1 + +b.dataset.cm, 1)).slice(0, 7);
+  const w = document.createElement('div'); w.innerHTML = calCard(); const c = w.firstElementChild; c.classList.add('static'); $('.card.cal').replaceWith(c); bindCal(); }); }
+
+/* ---------- récap de la semaine ---------- */
+function weekData(m) {
+  const e = addDays(m, 6), Lg = S.log.filter(x => x.d >= m && x.d <= e), sched = [0, 2, 5].map(k => addDays(m, k)).filter(isSched);
+  const st = d => { const r = rec(d); return r ? r.k : d < today() ? 'miss' : 'todo'; };
+  const days = Array.from({ length: 7 }, (_, i) => S.food[addDays(m, i)]).filter(x => x && x.v);
+  const wB = S.weights.filter(w => w.d < m), wE = S.weights.filter(w => w.d <= e), pl = S.pl || [];
+  const lp = pl.filter(x => x[0] >= m && x[0] <= e).reduce((a, x) => a + x[1], 0), after = pl.filter(x => x[0] > e).reduce((a, x) => a + x[1], 0);
+  return { m, e, sched: sched.length, done: sched.filter(d => ['ok', 'late'].includes(st(d))).length, jok: sched.filter(d => st(d) === 'joker').length,
+    walks: Lg.filter(x => x.k === 'walk').length, km: Lg.reduce((a, x) => a + (x.km || 0), 0), kcal: Lg.reduce((a, x) => a + (x.kcal || 0), 0),
+    fdays: days.length, clean: days.filter(x => !ecarts(x)).length, fk: days.reduce((a, x) => a + fkcal(x), 0), soda: days.reduce((a, x) => a + (x.soda || 0), 0),
+    k0: (wB.length ? wB[wB.length - 1] : S.weights[0]).kg, k1: wE.length ? wE[wE.length - 1].kg : null, lp, pEnd: S.points - after };
+}
+async function recap(m, live) {
+  const w = weekData(m), rEnd = rank(w.pEnd), rStart = rank(Math.max(0, w.pEnd - w.lp)), sunday = now().getDay() === 0 && now().getHours() >= 18;
+  const cur = live && m === monday(today()) && !sunday, perfect = w.sched && w.done === w.sched;
+  const verdict = !w.sched ? ['🏁', 'Avant le départ'] : perfect ? ['🏆', 'Semaine parfaite'] : w.done + w.jok >= w.sched - 1 ? ['👍', 'Semaine correcte'] : ['😬', 'Semaine ratée'];
+  if (perfect && !cur) confetti();
+  const dk = w.k1 != null ? w.k1 - w.k0 : null, sg = (n, x) => n + ' ' + x + (n > 1 ? 's' : '');
+  const nx = []; for (let d = addDays(w.e, 1), i = S.prog; nx.length < 3; d = addDays(d, 1)) if (DOW.includes(parse(d).getDay())) nx.push([d, build(i++)]);
+  const [r] = await modal(`<div class="ico">${cur ? '📊' : verdict[0]}</div><h3>${cur ? 'Ta semaine en cours' : verdict[1]}</h3>
+    <p>Du ${frDate(m, { day: 'numeric', month: 'long' })} au ${frDate(w.e, { day: 'numeric', month: 'long' })}</p>
+    <div class="rgrid"><div style="--d:.15s"><b>${w.done}<small>/${w.sched}</small></b>séances${w.jok ? ' · ' + sg(w.jok, 'joker') : ''}</div>
+      <div style="--d:.3s"><b>${w.walks}</b>${w.walks > 1 ? 'marches' : 'marche'}</div><div style="--d:.45s"><b>${dec(w.km)}</b>km</div><div style="--d:.6s"><b>${big(w.kcal)}</b>kcal brûlées</div></div>
+    <div class="lines">
+      <div style="animation-delay:.8s"><span>${w.fdays ? `${sg(w.clean, 'jour')} sans écart sur ${w.fdays}, ${sg(w.soda, 'soda')}` : 'Aucun bilan repas validé'}</span><b class="minus">${w.fk ? '+' + big(w.fk) + ' kcal' : ''}</b></div>
+      <div style="animation-delay:1s"><span>Poids</span><b class="${dk > 0 ? 'minus' : ''}">${dk == null ? 'pas de pesée' : dec(w.k0) + ' → ' + dec(w.k1) + ' kg'}</b></div>
+      <div style="animation-delay:1.2s"><span>LP de la semaine</span><b class="${w.lp < 0 ? 'minus' : ''}">${w.lp > 0 ? '+' + w.lp : w.lp < 0 ? '−' + -w.lp : '0'}</b></div></div>
+    <div class="rankup" style="--rank:${rEnd.color};animation-delay:1.4s">${emblem(rStart, 'mini')}${rStart.name}&nbsp;→&nbsp;${emblem(rEnd, 'mini')}${rEnd.name}</div>
+    ${cur ? '' : `<p style="margin-top:14px;text-align:left">À venir :${nx.map(([d, x]) => `<br><b style="color:var(--txt);text-transform:capitalize">${frDate(d, { weekday: 'long', day: 'numeric' })}</b> · ${x.title}`).join('')}</p>`}
+    <button class="btn run" data-r="share">📤 Partager ma progression</button><button class="btn sec" data-r="ok">Fermer</button>`);
+  if (r === 'share') shareCard();
+}
+
+/* ---------- carte de progression à partager ---------- */
+async function shareCard() {
+  const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'), SF = 'system-ui, -apple-system, Roboto, sans-serif';
+  const rr = (X, Y, w, h, r, col) => { x.fillStyle = col; x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); x.fill(); };
+  const tx = (t, X, Y, f, col, al = 'left') => { x.font = f; x.fillStyle = col; x.textAlign = al; x.fillText(t, X, Y); };
+  x.fillStyle = '#16181b'; x.fillRect(0, 0, W, H); x.strokeStyle = 'rgba(255,255,255,.05)'; x.lineWidth = 2;
+  for (let i = 0; i <= W; i += 54) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); }
+  for (let j = 0; j <= H; j += 54) { x.beginPath(); x.moveTo(0, j); x.lineTo(W, j); x.stroke(); }
+  const r = rank(S.points), f = formRank(curKg(S), S.h), T = tot(S), wk = Math.floor((parse(today()) - parse(S.created)) / (7 * 864e5)) + 1, l = lost(S);
+  rr(60, 60, 960, 380, 48, '#c4f82a');
+  tx('SEMAINE ' + wk + ' · REMISE EN FORME', 110, 140, `800 34px ${SF}`, 'rgba(18,20,15,.7)');
+  tx(l >= .1 ? '−' + dec(l) + ' kg' : 'C’est parti', 110, 310, `900 ${l >= .1 ? 170 : 130}px ${SF}`, '#12140f');
+  tx(l >= .1 ? 'depuis le ' + frDate(S.weights[0].d, { day: 'numeric', month: 'long' }) : 'Lancé le ' + frDate(S.created, { day: 'numeric', month: 'long' }), 110, 395, `700 38px ${SF}`, 'rgba(18,20,15,.75)');
+  const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(emblem(r).replace('<svg class="emblem"', '<svg xmlns="http://www.w3.org/2000/svg" width="230" height="260"'));
+  await new Promise(res => { img.onload = res; img.onerror = res; });
+  try { x.drawImage(img, 80, 500, 230, 260); } catch (e) {}
+  tx('RANG DISCIPLINE', 350, 580, `800 32px ${SF}`, '#9aa19a'); tx(r.name, 350, 675, `900 92px ${SF}`, r.color); tx('Rang forme : ' + f.name, 350, 740, `700 36px ${SF}`, f.color);
+  [['🔥', S.streak, 'SÉRIE', '#ff8a3d', '#12140f'], ['🛣️', dec(T.km), 'KM', '#9b6bff', '#ffffff'], ['🏃', S.done, 'SÉANCES', '#ffffff', '#12140f']].forEach((t, i) => {
+    const X = 60 + i * 330; rr(X, 820, 300, 300, 40, t[3]); tx(t[0], X + 40, 905, `60px ${SF}`, t[4]); tx(String(t[1]), X + 40, 1030, `900 110px ${SF}`, t[4]); tx(t[2], X + 40, 1085, `800 32px ${SF}`, t[4]); });
+  tx('Lundi, mercredi, samedi · 8h30. Pas d’excuse.', W / 2, 1235, `800 40px ${SF}`, '#f3f5ef', 'center');
+  const blob = await new Promise(res => c.toBlob(res, 'image/png')), file = new File([blob], 'ma-progression.png', { type: 'image/png' }), url = URL.createObjectURL(blob);
+  const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+  const [a] = await modal(`<img src="${url}" alt="Carte de progression" class="shimg"><p>Envoie-la à un pote : c’est lui qui te tiendra.</p>
+    ${canShare ? '<button class="btn run" data-r="share">📤 Partager</button>' : ''}<button class="btn ${canShare ? 'sec' : 'run'}" data-r="dl">Enregistrer l’image</button><button class="btn ghost" data-r="n">Fermer</button>`);
+  if (a === 'share') { try { await navigator.share({ files: [file] }); } catch (e) {} }
+  else if (a === 'dl') { const d = document.createElement('a'); d.href = url; d.download = file.name; d.click(); }
 }
 
 /* ---------- sauvegarde ---------- */
@@ -632,8 +764,10 @@ function rulesView() {
     <div class="rule"><span>Départ entre 8h00 et 9h30</span><b class="plus">+${P.time}</b></div>
     <div class="rule"><span>Série en cours (max ${P.streak * P.streakCap})</span><b class="plus">+${P.streak} × série</b></div>
     <div class="rule"><span>Séance rattrapée le lendemain</span><b class="plus">+${P.late}</b></div>
+    <div class="rule"><span>Plan B à la maison à la place de la séance (1 par semaine)</span><b class="plus">+${P.indoor}</b></div>
     <div class="rule"><span>Marche active (1 bonus par jour)</span><b class="plus">+${P.walk}</b></div>
     <div class="rule"><span>Course à l’improviste un jour sans rendez-vous (1 bonus par jour)</span><b class="plus">+${P.extra}</b></div>
+    <div class="rule"><span>Étirements guidés (1 bonus par jour)</span><b class="plus">+${P.stretch}</b></div>
     <div class="rule"><span>Quête : 3 courses + 2 marches dans la semaine</span><b class="plus">+${P.quest}</b></div>
     <div class="rule"><span>Bilan du soir : aucun écart</span><b class="plus">+${FOOD_PTS[0]}</b></div>
     <div class="rule"><span>Bilan du soir : 1 écart</span><b class="plus">+${FOOD_PTS[1]}</b></div>
@@ -694,10 +828,11 @@ async function boot() {
       <button class="btn run" data-r="y">Je signe</button>`);
     const kg = parseFloat(String(v).replace(',', '.')), hh = parseInt(h, 10); create(kg > 40 && kg < 200 ? kg : 95, hh > 130 && hh < 220 ? hh : 175);
   }
+  S.pl = S.pl || []; S.recaps = S.recaps || {};
   S.food = S.food || {}; if (!S.foodStart) { S.foodStart = today(); save(); }
   const before = S.points, lostArr = settle(), lostPts = before - S.points, a = rank(before), b = rank(S.points);
   shown = b.lp; render();
-  if (S.run && S.run.day === today()) { const ses = S.run.kind === 'walk' ? buildWalk() : build(S.prog), e = ((S.run.pausedAt || Date.now()) - S.run.start - S.run.paused) / 1000 * SPEED;
+  if (S.run && S.run.day === today()) { const ses = buildSes(S.run), e = ((S.run.pausedAt || Date.now()) - S.run.start - S.run.paused) / 1000 * SPEED;
     if (e < ses.total) return startRun(S.run.kind, Object.assign({}, S.run)); }
   S.run = null; save();
   if (lostArr.length) { buzz([400, 150, 400]);
@@ -705,6 +840,9 @@ async function boot() {
       ${lostPts < -lostArr.reduce((x, l) => x + l[1], 0) ? '<p>Tu n’avais pas plus à perdre.</p>' : ''}
       ${b.step < a.step ? `<div class="rankup down">Rétrogradé en ${b.name}</div>` : ''}<button class="btn bad" data-r="ok">Compris</button>`, 'shake');
     render(); }
+  /* récap : le dimanche à partir de 18h, sinon celui de la semaine passée */
+  const wk = now().getDay() === 0 && now().getHours() >= 18 ? monday(today()) : addDays(monday(today()), -7);
+  if (addDays(wk, 6) >= S.start && !S.recaps[wk]) { S.recaps[wk] = 1; save(); await recap(wk); render(); }
 }
 boot();
 if ('serviceWorker' in navigator && !TEST) navigator.serviceWorker.register('sw.js').catch(() => {});

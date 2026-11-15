@@ -234,3 +234,34 @@ h1,h2,h3,p{margin:0}
 .recs div{background:var(--card2);border-radius:14px;padding:10px 12px}
 .recs span{font-size:20px}.recs small{display:block;font-size:11px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 .recs b{display:block;font-size:20px;font-weight:900;margin-top:2px}
+
+/* plan B, étirements */
+#run.ex{background-color:var(--run);color:var(--ink)}
+#run.rest,#run.st{background-color:var(--walk);color:#fff}
+#run.rest .ring .tm,#run.st .ring .tm{color:#cdb8ff}
+.ring .ph{max-width:64%;text-align:center;line-height:1.1}
+#run .nxt{max-width:420px;line-height:1.45}#run .nxt b{font-size:17px}
+.btn.pbb{margin-top:10px;background:rgba(18,20,15,.14);color:inherit;border:0}
+.card.late .btn.pbb{background:rgba(18,20,15,.14)}
+.pbu{font-size:13px!important;font-weight:800;margin-top:12px!important}
+/* stats : boutons, calendrier */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.duo .btn{margin:0;font-size:15px;padding:14px 8px}
+.calh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.calh h2{margin:0}
+.calh button{width:40px;height:40px;border-radius:10px;background:var(--card2);font-size:24px;font-weight:900;line-height:1}
+.calg{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.calg em{font-style:normal;text-align:center;font-size:11px;font-weight:800;color:var(--mut);padding-bottom:2px}
+.cd{aspect-ratio:1;border-radius:9px;background:var(--card2);position:relative;display:grid;place-items:center;font-size:13px;font-weight:800}
+.cd.out{opacity:.28}.cd.today{box-shadow:0 0 0 2px #fff inset}
+.cd.run{background:var(--run);color:var(--ink)}.cd.walk{background:var(--walk);color:#fff}.cd.in{background:#fff;color:var(--ink)}
+.cd.miss{background:var(--bad);color:#fff}.cd.jok{background:#5a5f66}
+.cd.sched{background:transparent;border:2px dashed #4a5059}
+.cd i{position:absolute;bottom:4px;left:50%;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--run)}
+.cd i.meh{background:var(--gold)}.cd i.bad{background:var(--bad)}.cd.run i.good,.cd.in i.good{background:var(--ink)}
+.calp{font-size:12px!important}
+/* récap */
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.rgrid div{border-radius:14px;padding:12px 6px;font-size:12px;font-weight:800;text-transform:uppercase;color:var(--ink);animation:pop .5s var(--d) both}
+.rgrid div:nth-child(1){background:var(--run)}.rgrid div:nth-child(2){background:var(--walk);color:#fff}.rgrid div:nth-child(3){background:var(--gold)}.rgrid div:nth-child(4){background:#fff}
+.rgrid b{display:block;font-size:30px;font-weight:900;text-transform:none}.rgrid small{font-size:16px;opacity:.6}
+.rankup .mini{margin:0 6px}
+.shimg{width:100%;border-radius:14px;display:block}
