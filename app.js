@@ -9,7 +9,7 @@ if (Q.has('reset')) localStorage.removeItem(KEY);
 
 const DOW = [1, 3, 6];            // lundi, mercredi, samedi
 const HOUR = 8, MIN = 30;         // 8h30
-const P = { ok: 100, time: 50, streak: 10, streakCap: 10, late: 60, walk: 40, miss: 150, quest: 150,
+const P = { ok: 100, time: 50, streak: 10, streakCap: 10, late: 60, walk: 40, extra: 60, miss: 150, quest: 150,
             weighMon: 30, weigh: 15, weighMiss: 40, kg: 50, form: 100 };
 const PACE = { walk: 5.5 / 3.6, run: 8 / 3.6 };   // m/s, pour estimer les distances
 const MET = { walk: 4.3, run: 8.3 };               // dépense : MET × kg × heures
@@ -238,6 +238,7 @@ function home() {
   <div class="stats"><div class="stat fire"><b>${S.streak ? '<span class="flame">🔥</span> ' : ''}${S.streak}</b><span>Série</span></div>
     <div class="stat"><b>${dec(T.km)}</b><span>km</span></div><div class="stat"><b>${big(T.kcal)}</b><span>kcal</span></div><div class="stat jok"><b>${S.jokers}</b><span>Jokers</span></div></div>
   ${main}
+  <button class="btn sec impro" id="impro">＋ Séance à l’improviste</button>
   <div class="card quest"><h2>Quête de la semaine · +${P.quest} LP</h2>
     <div class="qrow">${[0, 1, 2].map(i => `<i class="${i < q.runs ? 'on' : ''}">🏃</i>`).join('')}${[0, 1].map(i => `<i class="${i < q.walks ? 'on w' : ''}">🚶</i>`).join('')}</div>
     <p>${q.done ? 'Quête réussie cette semaine.' : '3 courses et 2 marches actives de 40 min, en plus de tes trajets du boulot.'}</p></div>
@@ -255,6 +256,7 @@ function home() {
   if ($('#free')) $('#free').onclick = () => startRun('walk');
   if ($('#jk')) $('#jk').onclick = joker;
   if ($('#wg')) $('#wg').onclick = weigh;
+  $('#impro').onclick = impro;
   tickCd();
 }
 const stepQ = st => { if (st >= 28) return FQ[7]; const t = Math.floor(st / 4), d = st % 4; return FQ[t] + (FQ[t + 1] - FQ[t]) * d / 4; };
@@ -267,6 +269,16 @@ function tickCd() {
   el.textContent = d ? `${d} j ${h} h` : h ? `${h} h ${pad(mi)}` : `${mi} min`;
 }
 setInterval(tickCd, 20000);
+async function impro() {
+  const ses = build(S.prog), wk = buildWalk(), done = S.log.some(e => e.d === today() && (e.k === 'walk' || e.k === 'extra')), free = mode() === 'rest';
+  const [r] = await modal(`<div class="ico">⚡</div><h3>Séance à l’improviste</h3>
+    <p>En plus de ton programme : elle ne remplace pas les rendez-vous de 8h30 et ne fait pas avancer les niveaux.${done ? ' Tu as déjà eu ton bonus aujourd’hui : celle-ci compte pour les km et les kcal, sans LP.' : ''}</p>
+    ${free ? `<button class="btn run" data-r="extra">Course · ${ses.title}<small>${info(ses)} · +${done ? 0 : P.extra} LP</small></button>`
+      : '<p style="color:var(--gold);font-weight:800">Ta séance du jour n’est pas faite : elle passe d’abord. Ici, seulement de la marche.</p>'}
+    <button class="btn sec" data-r="walk">Marche active · 40 min<small>${info(wk)} · +${done ? 0 : P.walk} LP</small></button>
+    <button class="btn ghost" data-r="n">Annuler</button>`);
+  if (r === 'extra' || r === 'walk') startRun(r);
+}
 async function joker() {
   const [r] = await modal(`<div class="ico">🃏</div><h3>Utiliser un joker ?</h3><p>La séance est excusée : pas de LP, pas de sanction, ta série est conservée. Il t’en reste ${S.jokers}. Tu en regagnes un toutes les 4 séances.</p>
     <button class="btn run" data-r="y">Oui, j’ai une vraie raison</button><button class="btn sec" data-r="n">Non, j’y vais</button>`);
@@ -351,7 +363,9 @@ async function finish(frac) {
   const r = R, ses = r.ses, before = S.points, arr = [], kg = curKg(S), est = ses.dist * frac;
   const km = (r.gps > est * .6 && r.gps < est * 1.6 ? r.gps : est) / 1000, kcal = Math.round(ses.kcal(kg) * frac), min = Math.round(ses.total * frac / 60);
   endRun(); say('Séance terminée. Bravo.'); signal('end');
-  if (r.kind === 'walk') { addPts(P.walk); arr.push(['Marche active', P.walk]); S.log.push({ d: r.day, k: 'walk', pts: P.walk, min, km, kcal }); }
+  const bonusDone = S.log.some(e => e.d === r.day && (e.k === 'walk' || e.k === 'extra'));
+  if (r.kind === 'walk' || r.kind === 'extra') { const p = bonusDone ? 0 : r.kind === 'walk' ? P.walk : P.extra;
+    addPts(p); arr.push([r.kind === 'walk' ? 'Marche active' : 'Course à l’improviste', p]); S.log.push({ d: r.day, k: r.kind, pts: p, min, km, kcal }); }
   else {
     let pts = 0;
     if (r.kind === 'due') { pts += P.ok; arr.push(['Séance faite le bon jour', P.ok]); if (r.onTime) { pts += P.time; arr.push(['Départ à l’heure', P.time]); } }
@@ -365,7 +379,7 @@ async function finish(frac) {
   const q = questState(); if (!q.done && q.runs >= 3 && q.walks >= 2) { S.quests[q.m] = 1; addPts(P.quest); arr.push(['Quête de la semaine', P.quest]); }
   save(); tab = 'home'; setTab();
   const extra = `<div class="sum"><div><b>${dec(km)}</b>km</div><div><b>${kcal}</b>kcal</div><div><b>${min}</b>min</div></div>`;
-  if (r.kind === 'walk') return result('Marche validée', '🚶', arr, before, extra);
+  if (r.kind === 'walk' || r.kind === 'extra') return result(r.kind === 'walk' ? 'Marche validée' : 'Course bonus validée', r.kind === 'walk' ? '🚶' : '⚡', arr, before, extra);
   /* ressenti : ajuste la suite */
   const [f] = await modal(`<div class="ico">🎉</div><h3>Séance validée</h3>${extra}<p>C’était comment ? La prochaine séance s’adapte à ta réponse.</p>
     <div class="feel"><button data-r="easy"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><circle cx="23" cy="28" r="6" fill="#fff"/><circle cx="41" cy="28" r="6" fill="#fff"/><circle cx="24" cy="29" r="2.6" fill="#12140f"/><circle cx="42" cy="29" r="2.6" fill="#12140f"/><path d="M20 41q12 12 24 0" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Facile</button><button data-r="ok"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><circle cx="23" cy="28" r="6" fill="#fff"/><circle cx="41" cy="28" r="6" fill="#fff"/><circle cx="24" cy="29" r="2.6" fill="#12140f"/><circle cx="42" cy="29" r="2.6" fill="#12140f"/><path d="M22 44h20" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Correct</button><button data-r="hard"><svg viewBox="0 0 64 64"><rect x="6" y="8" width="52" height="50" rx="18" fill="rgba(0,0,0,.14)"/><path d="M17 27h12M35 27h12" stroke="#12140f" stroke-width="4" stroke-linecap="round"/><path d="M21 47q11-9 22 0" fill="none" stroke="#12140f" stroke-width="4" stroke-linecap="round"/></svg>Dur</button></div>`);
@@ -376,36 +390,53 @@ async function finish(frac) {
   save(); result('Bien joué', '🏅', arr, before, msg ? `<p>${msg}</p>` : '');
 }
 
-/* ---------- trajet ---------- */
+/* ---------- trajets ---------- */
 let map = null, watch = null;
-const CUM = ROUTE.reduce((a, p, i) => { a.push(i ? a[i - 1] + L.latLng(ROUTE[i - 1]).distanceTo(p) : 0); return a; }, []);
-function cut(d) { const pts = []; for (let i = 0; i < ROUTE.length; i++) { if (CUM[i] <= d) pts.push(ROUTE[i]); else { const a = ROUTE[i - 1], b = ROUTE[i], k = (d - CUM[i - 1]) / (CUM[i] - CUM[i - 1]);
-  pts.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]); break; } } return pts; }
-const at = d => cut(d).pop();
-function gmaps(turn) { const c = p => p[0].toFixed(5) + ',' + p[1].toFixed(5), a = at(Math.min(850, turn * .6));
-  return 'https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=' + c(ROUTE[0]) + '&destination=' + c(ROUTE[0]) + '&waypoints=' + [a, at(turn), a].map(c).join('%7C'); }
+const RT = {
+  bruche: { name: 'Le canal de la Bruche', short: 'Ouest · canal', desc: 'Les berges de l’Ill puis le chemin de halage du canal : tout droit, plat, goudronné, sans voitures.',
+    steps: ['<b>Départ</b> rue de l’Auberge de Jeunesse, au début de la Piste Maurice Garin.',
+      '<b>130 m</b> · traverse la route de Schirmeck. C’est la seule rue du parcours.',
+      '<b>300 m</b> · passerelle des Carolingiens (en bois), tu longes l’Ill.',
+      '<b>800 m</b> · la piste rejoint le canal de la Bruche. Suis le quai.',
+      '<b>1,1 km</b> · Piste Charly Grosskost, le chemin de halage : ensuite c’est tout droit le long du canal.'] },
+  ill: { name: 'L’Ill vers le sud', short: 'Sud · Ill', desc: 'Les promenades au bord de l’Ill, en terre battue, sans aucune voiture après la route de Schirmeck. Plus vert, mais limité à 2,4 km aller.',
+    steps: ['<b>Départ</b> rue de l’Auberge de Jeunesse, au début de la Piste Maurice Garin.',
+      '<b>130 m</b> · traverse la route de Schirmeck. C’est la seule rue du parcours.',
+      '<b>270 m</b> · passerelle des Carolingiens, tu longes l’Ill.',
+      '<b>670 m</b> · passerelle de l’Illhof : tu passes de l’autre côté de l’Ill.',
+      '<b>850 m</b> · Promenade des Utopies, puis Promenade des Lavandières vers 1,5 km, au bord de l’eau.',
+      '<b>2,4 km</b> · fin du parcours calme : ne va pas plus loin, ce sont les rues de l’Elsau.'] },
+};
+for (const k in RT) { const p = ROUTES[k]; RT[k].pts = p;
+  RT[k].cum = p.reduce((a, q, i) => { a.push(i ? a[i - 1] + L.latLng(p[i - 1]).distanceTo(q) : 0); return a; }, []); RT[k].len = RT[k].cum[RT[k].cum.length - 1]; }
+const curRoute = () => RT[S.route] || RT.bruche;
+function cut(rt, d) { const P = rt.pts, C = rt.cum, pts = [];
+  for (let i = 0; i < P.length; i++) { if (C[i] <= d) pts.push(P[i]); else { const a = P[i - 1], b = P[i], k = (d - C[i - 1]) / (C[i] - C[i - 1]);
+    pts.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]); break; } } return pts; }
+const at = (rt, d) => cut(rt, d).pop();
+function gmaps(rt, turn) { const c = p => p[0].toFixed(5) + ',' + p[1].toFixed(5), a = at(rt, Math.min(850, turn * .6));
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=' + c(rt.pts[0]) + '&destination=' + c(rt.pts[0]) + '&waypoints=' + [a, at(rt, turn), a].map(c).join('%7C'); }
 function mapView() {
-  const walkDay = mode() === 'rest', ses = build(S.prog), wk = buildWalk(), turn = Math.min(ses.dist / 2, CUM[CUM.length - 1]);
-  $('#view').innerHTML = `<div id="map"></div>
+  const ses = build(S.prog), wk = buildWalk(), rt = curRoute(), need = ses.dist / 2, fits = need <= rt.len + 50, turn = Math.min(need, rt.len);
+  $('#view').innerHTML = `<div class="seg">${Object.entries(RT).map(([k, r]) => `<button data-rt="${k}" class="${r === rt ? 'on' : ''}">${r.short}<small>${dec(r.len / 1000)} km aller</small></button>`).join('')}</div>
+    <div id="map"></div>
     <div class="card"><h2>${ses.name} · aller-retour</h2><div class="big">≈ ${dec(ses.dist / 1000)} km, retour chez toi compris</div>
-    <p>Demi-tour à ${dec(turn / 1000)} km du départ, au bout de ${fmt(ses.half)}. L’appli vibre au moment de faire demi-tour, et la marche de fin te ramène jusqu’à ta porte.</p>
-    <a class="btn run" href="${gmaps(turn)}" target="_blank" rel="noopener">Ouvrir dans Google Maps</a>
+    ${fits ? `<p>Demi-tour à ${dec(turn / 1000)} km du départ, au bout de ${fmt(ses.half)}. L’appli vibre au moment de faire demi-tour, et la marche de fin te ramène jusqu’à ta porte.</p>`
+      : `<p style="color:var(--gold);font-weight:800">Ce trajet fait ${dec(rt.len / 1000)} km aller : trop court pour cette séance, qui demande un demi-tour à ${dec(need / 1000)} km. Prends le canal de la Bruche.</p>`}
+    <a class="btn run" href="${gmaps(rt, turn)}" target="_blank" rel="noopener">Ouvrir dans Google Maps</a>
     <button class="btn sec" id="loc">Afficher ma position ici</button></div>
-    <div class="card"><h2>Le chemin, étape par étape</h2><ol class="steps">
-      <li><b>Départ</b> rue de l’Auberge de Jeunesse, au début de la Piste Maurice Garin.</li>
-      <li><b>130 m</b> · traverse la route de Schirmeck. C’est la seule rue du parcours.</li>
-      <li><b>300 m</b> · passerelle des Carolingiens (en bois), tu longes l’Ill.</li>
-      <li><b>800 m</b> · la piste rejoint le canal de la Bruche. Suis le quai.</li>
-      <li><b>1,1 km</b> · début de la Piste Charly Grosskost, le chemin de halage. Ensuite c’est tout droit le long du canal, sans voitures.</li>
-      <li><b>Demi-tour</b> quand le téléphone vibre, et retour par le même chemin.</li></ol>
-      <p>Marche active (jours sans course) : même chemin, demi-tour à ${dec(wk.dist / 2000)} km.</p></div>`;
+    <div class="card"><h2>${rt.name}, étape par étape</h2><p>${rt.desc}</p>
+      <ol class="steps" style="margin-top:10px">${rt.steps.map(x => `<li>${x}</li>`).join('')}<li><b>Demi-tour</b> quand le téléphone vibre, et retour par le même chemin.</li></ol>
+      <p>Marche active de 40 min : même chemin, demi-tour à ${dec(Math.min(wk.dist / 2, rt.len) / 1000)} km.</p></div>`;
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { S.route = b.dataset.rt; save(); render(); });
   map = L.map('map', { zoomControl: false });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-  L.polyline(ROUTE, { color: '#12140f', weight: 4, opacity: .55, dashArray: '2 8' }).addTo(map);
-  const seg = cut(turn); L.polyline(seg, { color: '#12140f', weight: 11, opacity: 1 }).addTo(map);
-  const line = L.polyline(seg, { color: '#c4f82a', weight: 6 }).addTo(map);
+  Object.values(RT).forEach(r => { if (r !== rt) L.polyline(r.pts, { color: '#9aa19a', weight: 4, opacity: .7, dashArray: '2 8' }).addTo(map); });
+  L.polyline(rt.pts, { color: '#12140f', weight: 4, opacity: .55, dashArray: '2 8' }).addTo(map);
+  const seg = cut(rt, turn); L.polyline(seg, { color: '#12140f', weight: 11, opacity: 1 }).addTo(map);
+  const line = L.polyline(seg, { color: fits ? '#c4f82a' : '#ff8a3d', weight: 6 }).addTo(map);
   const mk = (p, t, c = '') => L.marker(p, { icon: L.divIcon({ className: '', html: `<span class="mk ${c}">${t}</span>`, iconSize: [0, 0] }) }).addTo(map);
-  mk(ROUTE[0], 'Départ et arrivée', 'start'); mk(seg[seg.length - 1], '↩ Demi-tour · ' + dec(turn / 1000) + ' km');
+  mk(rt.pts[0], 'Départ et arrivée', 'start'); mk(seg[seg.length - 1], '↩ Demi-tour · ' + dec(turn / 1000) + ' km');
   map.fitBounds(line.getBounds(), { paddingTopLeft: [80, 50], paddingBottomRight: [80, 30] });
   $('#loc').onclick = () => { if (!navigator.geolocation) return; let me = null;
     watch = navigator.geolocation.watchPosition(p => { const ll = [p.coords.latitude, p.coords.longitude];
@@ -461,7 +492,7 @@ function statsView() {
   const kgTier = t => dec(kgAt(FQ[t], S.h));
   $('#view').innerHTML = `
   <div class="tiles"><div class="tile"><b>${dec(T.km)}</b><span>km parcourus</span></div><div class="tile"><b>${big(T.kcal)}</b><span>kcal brûlées</span></div>
-    <div class="tile"><b>${Math.floor(T.min / 60)} h ${pad(T.min % 60)}</b><span>dehors</span></div><div class="tile"><b>${S.done}<small> + ${T.walks}</small></b><span>courses + marches</span></div></div>
+    <div class="tile"><b>${Math.floor(T.min / 60)} h ${pad(T.min % 60)}</b><span>dehors</span></div><div class="tile"><b>${S.done + S.log.filter(e => e.k === 'extra').length}<small> + ${T.walks}</small></b><span>courses + marches</span></div></div>
   <div class="card"><h2>Kilomètres par semaine</h2>${weekBars()}<p>Tes calories brûlées valent ${big(T.kcal / KCAL_KG * 1000)} g de graisse.</p></div>
   <div class="card"><h2>Poids · prévision sur 12 semaines</h2><div class="big">${dec(kg)} kg <small style="color:var(--run)">${lost(S) > 0 ? '−' + dec(lost(S)) + ' kg' : ''}</small></div>
     ${chart()}
@@ -494,7 +525,8 @@ function rulesView() {
     <div class="rule"><span>Départ entre 8h00 et 9h30</span><b class="plus">+${P.time}</b></div>
     <div class="rule"><span>Série en cours (max ${P.streak * P.streakCap})</span><b class="plus">+${P.streak} × série</b></div>
     <div class="rule"><span>Séance rattrapée le lendemain</span><b class="plus">+${P.late}</b></div>
-    <div class="rule"><span>Marche active un jour sans course</span><b class="plus">+${P.walk}</b></div>
+    <div class="rule"><span>Marche active (1 bonus par jour)</span><b class="plus">+${P.walk}</b></div>
+    <div class="rule"><span>Course à l’improviste un jour sans rendez-vous (1 bonus par jour)</span><b class="plus">+${P.extra}</b></div>
     <div class="rule"><span>Quête : 3 courses + 2 marches dans la semaine</span><b class="plus">+${P.quest}</b></div>
     <div class="rule"><span>Pesée du lundi (un autre jour : +${P.weigh})</span><b class="plus">+${P.weighMon}</b></div>
     <div class="rule"><span>Chaque kilo perdu (nouveau record)</span><b class="plus">+${P.kg}</b></div>

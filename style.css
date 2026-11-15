@@ -206,3 +206,10 @@ h1,h2,h3,p{margin:0}
 .feel button:nth-child(1){background:var(--run)}.feel button:nth-child(2){background:var(--gold)}.feel button:nth-child(3){background:var(--walk);color:#fff}
 .feel svg{display:block;width:64px;height:64px;margin:0 auto 6px}
 #fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:990}
+
+.btn small{display:block;font-size:12px;font-weight:700;opacity:.75;margin-top:4px}
+.btn.impro{margin:0 0 14px;border-style:dashed}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.seg button{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 6px;font-weight:900;font-size:15px}
+.seg button small{display:block;font-size:11px;font-weight:700;color:var(--mut);margin-top:2px}
+.seg button.on{background:var(--run);border-color:var(--run);color:var(--ink)}.seg button.on small{color:rgba(18,20,15,.65)}
