@@ -1,4 +1,4 @@
-const C='course-v3';
+const C='course-v4';
 const SHELL=['./','index.html','style.css','app.js','route.js','manifest.json','lib/leaflet.js','lib/leaflet.css','lib/dseg7.woff2','icons/icon-192.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(SHELL)));self.skipWaiting();});
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));

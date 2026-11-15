@@ -133,7 +133,7 @@ h1,h2,h3,p{margin:0}
 .leaflet-tile-pane{filter:grayscale(.55) brightness(.9) contrast(1.05)}
 .mk{background:var(--ink);color:#fff;border:2px solid var(--run);border-radius:8px;padding:3px 9px;font-weight:800;font-size:12px;white-space:nowrap;transform:translate(-50%,-150%);display:inline-block}
 .mk.start{border-color:#fff}
-.me{width:18px;height:18px;border-radius:50%;background:#4aa3ff;border:3px solid #fff}
+.medot{width:18px;height:18px;border-radius:50%;background:#4aa3ff;border:3px solid #fff}
 
 /* séance */
 #run{position:fixed;inset:0;z-index:900;display:flex;flex-direction:column;align-items:center;justify-content:space-between;
@@ -213,3 +213,24 @@ h1,h2,h3,p{margin:0}
 .seg button{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 6px;font-weight:900;font-size:15px}
 .seg button small{display:block;font-size:11px;font-weight:700;color:var(--mut);margin-top:2px}
 .seg button.on{background:var(--run);border-color:var(--run);color:var(--ink)}.seg button.on small{color:rgba(18,20,15,.65)}
+
+/* écarts, météo, records */
+.card.static{animation:none!important}
+.fd{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.card.late .fd{border-color:rgba(18,20,15,.15)}
+.fd .fi{font-size:26px;width:34px;text-align:center}
+.fd .ft{flex:1;min-width:0}.fd .ft b{display:block;font-size:15px;font-weight:900}.fd .ft small{display:block;font-size:11px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fd button{width:42px;height:42px;border-radius:12px;background:var(--card2);font-size:24px;font-weight:900;line-height:1;flex:none;transition:transform .1s}
+.fd button:active{transform:scale(.88)}
+.fd button[data-s="1"]{background:var(--gold);color:var(--ink)}
+.card.late .fd button{background:rgba(18,20,15,.14)}.card.late .fd button[data-s="1"]{background:var(--ink);color:#fff}
+.fd .fn{font-family:LCD,ui-monospace,monospace;font-size:24px;min-width:34px;text-align:center}
+.card.note{border-color:var(--gold)}
+.wx{display:flex;gap:10px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--card2);font-size:13px;line-height:1.4}
+.card.due .wx{background:rgba(18,20,15,.12)}
+.wx span{font-size:28px}.wx small{display:block;font-weight:800;margin-top:2px}
+.bars.food i{background:var(--gold)}
+.recs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.recs div{background:var(--card2);border-radius:14px;padding:10px 12px}
+.recs span{font-size:20px}.recs small{display:block;font-size:11px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.recs b{display:block;font-size:20px;font-weight:900;margin-top:2px}

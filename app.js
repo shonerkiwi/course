@@ -10,7 +10,7 @@ if (Q.has('reset')) localStorage.removeItem(KEY);
 const DOW = [1, 3, 6];            // lundi, mercredi, samedi
 const HOUR = 8, MIN = 30;         // 8h30
 const P = { ok: 100, time: 50, streak: 10, streakCap: 10, late: 60, walk: 40, extra: 60, miss: 150, quest: 150,
-            weighMon: 30, weigh: 15, weighMiss: 40, kg: 50, form: 100 };
+            weighMon: 30, weigh: 15, weighMiss: 40, kg: 50, form: 100, foodMiss: 10 };
 const PACE = { walk: 5.5 / 3.6, run: 8 / 3.6 };   // m/s, pour estimer les distances
 const MET = { walk: 4.3, run: 8.3 };               // dépense : MET × kg × heures
 const KCAL_KG = 7700;                              // kcal pour 1 kg de graisse
@@ -23,6 +23,9 @@ const APEX = [['Master', 4200, '#c77dff'], ['Grand Maître', 5000, '#ff5d73'], [
 const DIVLP = 150, ROM = ['IV', 'III', 'II', 'I'];
 /* rang Forme : part des hommes en France plus lourds que toi (à taille égale) */
 const FQ = [0, 15, 25, 35, 50, 58, 65, 75];
+/* écarts : [clé, icône, nom, détail, kcal par unité, g de sucre par unité] — valeurs moyennes */
+const FOOD = [['soda', '🥤', 'Soda', 'canette ou verre de 33 cl', 139, 35], ['sucre', '🍬', 'Sucreries', 'bonbons, gâteau, chocolat, viennoiserie…', 150, 18], ['grign', '🍟', 'Grignotages', 'chips, biscuits, en-cas…', 200, 3]];
+const FOOD_PTS = [20, 5, 0, -15, -30];   // LP selon le nombre d'écarts du jour (0, 1, 2, 3, 4 et plus)
 
 const ACH = [
   ['first', '👟', 'Première sortie', s => s.done >= 1],
@@ -37,6 +40,8 @@ const ACH = [
   ['run30', '🏆', '30 minutes de course d’affilée', s => s.prog >= 24],
   ['s10', '🌋', '10 séances d’affilée', s => s.best >= 10],
   ['u75', '💎', 'Sous les 75 kg', s => curKg(s) < 75],
+  ['clean7', '🥗', '7 jours de suite sans aucun écart', s => bestRun(s, x => ecarts(x) === 0) >= 7],
+  ['nosoda', '🚫', '14 jours de suite sans soda', s => bestRun(s, x => !x.soda) >= 14],
 ];
 
 /* ---------- dates et formats ---------- */
@@ -64,7 +69,7 @@ function create(kg, h) {
   if (!(DOW.includes(n.getDay()) && early)) d = addDays(d, 1);
   while (!DOW.includes(parse(d).getDay())) d = addDays(d, 1);
   S = { v: 2, created: today(), start: d, h, points: 0, streak: 0, best: 0, jokers: 1, prog: 0, done: 0,
-        log: [], weights: [{ d: today(), kg }], kgBest: Math.floor(kg), formBest: formRank(kg, h).step, ach: {}, quests: {}, feels: [], run: null };
+        log: [], weights: [{ d: today(), kg }], kgBest: Math.floor(kg), formBest: formRank(kg, h).step, ach: {}, quests: {}, feels: [], food: {}, foodStart: today(), run: null };
   save();
 }
 const isSched = s => s >= S.start && DOW.includes(parse(s).getDay());
@@ -77,6 +82,12 @@ const lost = s => s.weights[0].kg - curKg(s);
 const weighedThisWeek = () => { const m = monday(today()); return S.weights.some(w => w.d >= m); };
 const tot = s => s.log.reduce((a, e) => { a.km += e.km || 0; a.kcal += e.kcal || 0; a.min += e.min || 0; if (e.k === 'walk') a.walks++; return a; }, { km: 0, kcal: 0, min: 0, walks: 0 });
 function addPts(n) { S.points = Math.max(0, S.points + n); }
+const ecarts = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0), 0);
+const fkcal = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0) * f[4], 0);
+const fsugar = x => FOOD.reduce((a, f) => a + (x[f[0]] || 0) * f[5], 0);
+function bestRun(s, f) { let b = 0, c = 0, prev = null;
+  Object.keys(s.food || {}).sort().forEach(d => { const x = s.food[d]; if (!x.v) { c = 0; prev = d; return; }
+    if (prev && addDays(prev, 1) !== d) c = 0; c = f(x) ? c + 1 : 0; b = Math.max(b, c); prev = d; }); return b; }
 
 /* ---------- rangs ---------- */
 function rank(p) {
@@ -120,6 +131,11 @@ function settle() {
     if (S.weights.some(w => w.d >= m && w.d <= end) || S.log.some(e => e.k === 'wmiss' && e.d === end)) continue;
     S.log.push({ d: end, k: 'wmiss', pts: -P.weighMiss }); addPts(-P.weighMiss);
     out.push(['Pesée de la semaine du ' + frDate(m, { day: 'numeric', month: 'short' }) + ' oubliée', -P.weighMiss]);
+  }
+  for (let d = S.foodStart; d && addDays(d, 1) < t; d = addDays(d, 1)) {
+    if ((S.food[d] && S.food[d].v) || S.log.some(e => e.k === 'fmiss' && e.d === d)) continue;
+    S.log.push({ d, k: 'fmiss', pts: -P.foodMiss }); addPts(-P.foodMiss);
+    out.push(['Bilan repas du ' + frDate(d, { weekday: 'long', day: 'numeric', month: 'short' }) + ' pas validé', -P.foodMiss]);
   }
   save(); return out;
 }
@@ -192,7 +208,7 @@ function modal(html, cls = '') {
     const v = [...m.querySelectorAll('input')].map(i => i.value); m.hidden = true; res([b.dataset.r, ...v]); }));
 }
 const lines = arr => '<div class="lines">' + arr.map(([l, p], i) =>
-  `<div style="animation-delay:${.25 + i * .22}s"><span>${l}</span><b class="${p < 0 ? 'minus' : ''}">${p > 0 ? '+' : ''}${p || ''}</b></div>`).join('') + '</div>';
+  `<div style="animation-delay:${.25 + i * .22}s"><span>${l}</span><b class="${p < 0 ? 'minus' : ''}">${p > 0 ? '+' + p : p < 0 ? '−' + -p : ''}</b></div>`).join('') + '</div>';
 function newAch() { const got = []; ACH.forEach(([id, ic, name, test]) => { if (!S.ach[id] && test(S)) { S.ach[id] = today(); got.push(ic + ' ' + name); } }); save(); return got; }
 async function result(title, ico, arr, before, extra = '') {
   const gain = S.points - before, a = rank(before), b = rank(S.points), ach = newAch();
@@ -202,6 +218,8 @@ async function result(title, ico, arr, before, extra = '') {
     ${b.step > a.step ? `<div class="rankup" style="--rank:${b.color}">${emblem(b, 'mini')} Promotion : ${b.name}</div>` : b.step < a.step ? `<div class="rankup down">Rétrogradé en ${b.name}</div>` : ''}
     ${ach.map(x => `<div class="rankup" style="--rank:var(--gold)">Succès : ${x}</div>`).join('')}
     <button class="btn run" data-r="ok">Continuer</button>`, gain < 0 ? 'shake' : '');
+  const want = arr.reduce((a, l) => a + (l[1] || 0), 0);
+  if (want < 0 && gain > want) { const el = document.createElement('p'); el.textContent = 'Tu n’avais pas plus de LP à perdre.'; $('#tt').parentNode.after(el); }
   setTimeout(() => countUp($('#tt'), 0, Math.abs(gain), 1100), 300 + arr.length * 220);
   await p; render();
 }
@@ -217,6 +235,7 @@ function home() {
   if (m === 'due') main = `<div class="card due"><h2>Séance du jour · ${ses.name}</h2>
     <div class="big">${mins < 8 * 60 ? 'Rendez-vous à 8h30' : onTime ? 'C’est l’heure. Dehors.' : 'Tu es en retard, mais ça compte encore'}</div>
     <p>${ses.title}<br>${info(ses)}</p>
+    <div id="wx" data-d="${today()}">${wxHtml(today())}</div>
     <div class="gain"><span class="chip">+${P.ok} séance</span><span class="chip ${mins > 9 * 60 + 30 ? 'off' : ''}">+${P.time} à l’heure</span><span class="chip">+${sb} série</span></div>
     <button class="btn pulse" id="go">C’est parti</button>
     ${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker (malade, blessé…)</button>' : ''}</div>`;
@@ -227,7 +246,7 @@ function home() {
     ${S.jokers ? '<button class="btn ghost" id="jk">Utiliser un joker</button>' : ''}</div>`;
   else { const d = nextRdv(), wk = buildWalk(); main = `<div class="card"><h2>Prochain rendez-vous</h2>
     <div class="big" style="text-transform:capitalize">${frDate(d)} · 8h30</div>
-    <p>Dans <span class="count" id="cd"></span> · ${ses.title}</p></div>
+    <p>Dans <span class="count" id="cd"></span> · ${ses.title}</p><div id="wx" data-d="${d}">${wxHtml(d)}</div></div>
     ${walked ? '' : `<div class="card walkc"><h2>Jour sans course · bonus</h2><div class="big">Marche active</div><p>${info(wk)}<br>En plus de tes trajets à pied du boulot : eux, ton corps les compte déjà.</p>
     <button class="btn" id="free">Marcher 40 min (+${P.walk} LP)</button></div>`}`; }
   const q = questState();
@@ -239,6 +258,7 @@ function home() {
     <div class="stat"><b>${dec(T.km)}</b><span>km</span></div><div class="stat"><b>${big(T.kcal)}</b><span>kcal</span></div><div class="stat jok"><b>${S.jokers}</b><span>Jokers</span></div></div>
   ${main}
   <button class="btn sec impro" id="impro">＋ Séance à l’improviste</button>
+  ${foodCard()}${backupNote()}
   <div class="card quest"><h2>Quête de la semaine · +${P.quest} LP</h2>
     <div class="qrow">${[0, 1, 2].map(i => `<i class="${i < q.runs ? 'on' : ''}">🏃</i>`).join('')}${[0, 1].map(i => `<i class="${i < q.walks ? 'on w' : ''}">🚶</i>`).join('')}</div>
     <p>${q.done ? 'Quête réussie cette semaine.' : '3 courses et 2 marches actives de 40 min, en plus de tes trajets du boulot.'}</p></div>
@@ -256,7 +276,8 @@ function home() {
   if ($('#free')) $('#free').onclick = () => startRun('walk');
   if ($('#jk')) $('#jk').onclick = joker;
   if ($('#wg')) $('#wg').onclick = weigh;
-  $('#impro').onclick = impro;
+  $('#impro').onclick = impro; bindFood(); loadWx();
+  if ($('#bk')) $('#bk').onclick = () => { tab = 'rules'; render(); };
   tickCd();
 }
 const stepQ = st => { if (st >= 28) return FQ[7]; const t = Math.floor(st / 4), d = st % 4; return FQ[t] + (FQ[t + 1] - FQ[t]) * d / 4; };
@@ -269,6 +290,56 @@ function tickCd() {
   el.textContent = d ? `${d} j ${h} h` : h ? `${h} h ${pad(mi)}` : `${mi} min`;
 }
 setInterval(tickCd, 20000);
+/* ---------- écarts du jour ---------- */
+function foodDay() { const y = addDays(today(), -1); return S.foodStart <= y && !(S.food[y] && S.food[y].v) ? y : today(); }
+function foodCard() {
+  const d = foodDay(), x = S.food[d] || {}, y = d !== today(), n = ecarts(x), canVal = y || now().getHours() >= 18, fp = FOOD_PTS[Math.min(n, 4)];
+  if (x.v) return `<div class="card food"><h2>Aujourd’hui · bilan validé ✓</h2><p style="font-size:22px;color:var(--txt);font-weight:900">${FOOD.map(f => `${f[1]} ${x[f[0]] || 0}`).join('   ')}</p>
+    <p>${n ? `≈ ${big(fkcal(x))} kcal en trop aujourd’hui.` : 'Journée propre.'} Demain, on recommence à zéro.</p></div>`;
+  return `<div class="card food ${y ? 'late' : ''}"><h2>${y ? 'Bilan d’hier à valider' : 'Aujourd’hui · écarts'}</h2>
+    ${FOOD.map(f => `<div class="fd"><span class="fi">${f[1]}</span><div class="ft"><b>${f[2]}</b><small>${f[3]}</small></div>
+      <button data-f="${f[0]}" data-s="-1" aria-label="Retirer">−</button><b class="fn">${x[f[0]] || 0}</b><button data-f="${f[0]}" data-s="1" aria-label="Ajouter">+</button></div>`).join('')}
+    <p>${n ? `≈ ${big(fkcal(x))} kcal et ${big(fsugar(x))} g de sucre en trop.` : 'Rien pour l’instant. Note tout, même un seul bonbon.'}</p>
+    ${canVal ? `<button class="btn" id="fval">Valider ${y ? 'hier' : 'ma journée'} (${fp > 0 ? '+' + fp : fp < 0 ? '−' + -fp : 0} LP)</button>` : '<p>Le bilan se valide ce soir, à partir de 18h.</p>'}</div>`;
+}
+function bindFood() {
+  document.querySelectorAll('.fd button').forEach(b => b.onclick = () => {
+    const d = foodDay(), x = S.food[d] = S.food[d] || {}; x[b.dataset.f] = Math.max(0, (x[b.dataset.f] || 0) + +b.dataset.s); save(); buzz(25);
+    const w = document.createElement('div'); w.innerHTML = foodCard(); const c = w.firstElementChild; c.classList.add('static'); $('.card.food').replaceWith(c); bindFood(); });
+  if ($('#fval')) $('#fval').onclick = validateFood;
+}
+async function validateFood() {
+  const d = foodDay(), x = S.food[d] = S.food[d] || {}, n = ecarts(x), p = FOOD_PTS[Math.min(n, 4)], before = S.points;
+  const [r] = await modal(`<div class="ico">🍽️</div><h3>Valider ${d === today() ? 'ta journée' : 'hier'} ?</h3>
+    <p style="font-size:22px;color:var(--txt);font-weight:900">${FOOD.map(f => `${f[1]} ${x[f[0]] || 0}`).join('   ')}</p><p>Une fois validé, tu ne peux plus le modifier.</p>
+    <button class="btn run" data-r="y">Oui, j’ai tout noté</button><button class="btn sec" data-r="n">Pas encore</button>`);
+  if (r !== 'y') return;
+  x.v = 1; addPts(p); S.log.push({ d, k: 'food', pts: p }); save();
+  result(n ? 'Bilan validé' : 'Journée propre', n === 0 ? '🥗' : n >= 3 ? '😬' : '🍽️', [[n ? n + ' écart' + (n > 1 ? 's' : '') : 'Aucun écart', p]], before,
+    n ? `<p>≈ ${big(fkcal(x))} kcal en trop, soit environ ${Math.round(fkcal(x) / KCAL_KG * 1000)} g de graisse.</p>` : '');
+}
+function backupNote() { const last = S.lastBackup || S.created, days = Math.round((parse(today()) - parse(last)) / 864e5);
+  return days >= 14 ? `<div class="card note"><h2>💾 Sauvegarde</h2><p>${S.lastBackup ? 'Dernière sauvegarde il y a ' + days + ' jours.' : 'Aucune sauvegarde depuis le début.'} Si tu perds ce téléphone, tout est perdu.</p><button class="btn sec" id="bk">Sauvegarder maintenant</button></div>` : ''; }
+
+/* ---------- météo de 8h30 (Open-Meteo, sans compte ; position arrondie au km) ---------- */
+let WX = null;
+const WXC = c => c === 0 ? ['☀️', 'ciel dégagé'] : c <= 3 ? ['⛅', 'nuageux'] : c <= 48 ? ['🌫️', 'brouillard'] : c <= 57 ? ['🌦️', 'bruine'] : c <= 67 ? ['🌧️', 'pluie']
+  : c <= 77 ? ['🌨️', 'neige'] : c <= 82 ? ['🌧️', 'averses'] : c <= 86 ? ['🌨️', 'averses de neige'] : ['⛈️', 'orage'];
+async function loadWx() {
+  if (WX && Date.now() - WX.t < 30 * 60e3) return;
+  try { const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=48.57&longitude=7.72&hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,wind_speed_10m&timezone=Europe%2FParis&forecast_days=8');
+    WX = { t: Date.now(), h: (await r.json()).hourly }; const el = $('#wx'); if (el) el.innerHTML = wxHtml(el.dataset.d); } catch (e) {}
+}
+function wxHtml(d) {
+  if (!WX || !WX.h) return ''; const H = WX.h, i = H.time.indexOf(d + 'T08:00'); if (i < 0) return ''; const j = H.time[i + 1] ? i + 1 : i;
+  const avg = k => Math.round((H[k][i] + H[k][j]) / 2), t = avg('temperature_2m'), fe = avg('apparent_temperature'), w = avg('wind_speed_10m');
+  const rain = Math.max(H.precipitation_probability[i] || 0, H.precipitation_probability[j] || 0), c = WXC(H.weather_code[i]), tips = [];
+  if (fe <= 2) tips.push('gants et bonnet'); else if (fe <= 9) tips.push('manches longues');
+  if (rain >= 50) tips.push('coupe-vent et casquette'); if (w >= 30) tips.push('vent fort, pars face au vent');
+  if (t <= 1 && rain >= 30) tips.push('verglas possible sur les chemins');
+  return `<div class="wx"><span>${c[0]}</span><div><b>8h30 : ${t} °C</b> (ressenti ${fe}), ${c[1]}, pluie ${rain} %, vent ${w} km/h${tips.length ? `<small>À prévoir : ${tips.join(', ')}</small>` : ''}</div></div>`;
+}
+
 async function impro() {
   const ses = build(S.prog), wk = buildWalk(), done = S.log.some(e => e.d === today() && (e.k === 'walk' || e.k === 'extra')), free = mode() === 'rest';
   const [r] = await modal(`<div class="ico">⚡</div><h3>Séance à l’improviste</h3>
@@ -365,7 +436,7 @@ async function finish(frac) {
   endRun(); say('Séance terminée. Bravo.'); signal('end');
   const bonusDone = S.log.some(e => e.d === r.day && (e.k === 'walk' || e.k === 'extra'));
   if (r.kind === 'walk' || r.kind === 'extra') { const p = bonusDone ? 0 : r.kind === 'walk' ? P.walk : P.extra;
-    addPts(p); arr.push([r.kind === 'walk' ? 'Marche active' : 'Course à l’improviste', p]); S.log.push({ d: r.day, k: r.kind, pts: p, min, km, kcal }); }
+    addPts(p); arr.push([r.kind === 'walk' ? 'Marche active' : 'Course à l’improviste', p]); S.log.push(Object.assign({ d: r.day, k: r.kind, pts: p, min, km, kcal }, r.kind === 'extra' ? { lvl: S.prog } : {})); }
   else {
     let pts = 0;
     if (r.kind === 'due') { pts += P.ok; arr.push(['Séance faite le bon jour', P.ok]); if (r.onTime) { pts += P.time; arr.push(['Départ à l’heure', P.time]); } }
@@ -440,7 +511,7 @@ function mapView() {
   map.fitBounds(line.getBounds(), { paddingTopLeft: [80, 50], paddingBottomRight: [80, 30] });
   $('#loc').onclick = () => { if (!navigator.geolocation) return; let me = null;
     watch = navigator.geolocation.watchPosition(p => { const ll = [p.coords.latitude, p.coords.longitude];
-      if (!me) me = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18] }) }).addTo(map); else me.setLatLng(ll);
+      if (!me) me = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="medot"></div>', iconSize: [18, 18] }) }).addTo(map); else me.setLatLng(ll);
     }, () => { $('#loc').textContent = 'Position indisponible'; }, { enableHighAccuracy: true }); $('#loc').textContent = 'Position affichée en bleu'; };
 }
 
@@ -499,6 +570,7 @@ function statsView() {
     <p>Si tu fais toutes tes séances et 2 marches actives par semaine (en plus de tes trajets à pied habituels, déjà comptés dans ton poids actuel) : <b style="color:#9b6bff">${dec(pA[12])} kg</b> dans 12 semaines (≈ ${big(wkKcal)} kcal brûlées par semaine).
     En mangeant en plus 400 kcal de moins par jour (un soda et un grignotage) : <b style="color:var(--gold)">${dec(pB[12])} kg</b>. Le sport seul ne suffit pas : c’est l’assiette qui fait les deux tiers du travail.</p>
     <button class="btn ${weighedThisWeek() ? 'sec' : 'run'}" id="wg">${weighedThisWeek() ? 'Corriger / ajouter une pesée' : 'Pesée de la semaine'}</button></div>
+  ${foodWeek()}${recordsCard()}
   <div class="card form" style="--rank:${f.color}"><h2>Rang forme</h2><div class="frow">${emblem(f, 'emblem sm')}<div><div class="big">${f.name}</div>
     <p>Plus léger que ${Math.round(f.q)} % des hommes en France de ta taille (${S.h} cm).</p></div></div>
     <div class="ranks">${TIERS.map((t, i) => `<div class="${t[0] === f.tier ? 'me' : ''}" style="color:${t[1]}"><span>${t[0]}</span><span>${i ? 'sous ' + kgTier(i) + ' kg · top ' + (100 - FQ[i]) + ' %' : 'départ'}</span></div>`).concat(`<div class="${f.tier === 'Master' ? 'me' : ''}" style="color:${APEX[0][2]}"><span>Master</span><span>sous ${kgTier(7)} kg · top 25 %</span></div>`).reverse().join('')}</div>
@@ -506,6 +578,41 @@ function statsView() {
   <div class="card"><h2>Pesées</h2>${S.weights.slice().reverse().map((x, i, a) => { const pv = a[i + 1], df = pv ? x.kg - pv.kg : 0;
     return `<div class="rule"><span style="text-transform:capitalize">${frDate(x.d, { weekday: 'short', day: 'numeric', month: 'short' })}</span><b class="${df < 0 ? 'plus' : df > 0 ? 'minus' : ''}">${dec(x.kg)} kg${pv ? ' (' + (df > 0 ? '+' : df < 0 ? '−' : '') + dec(Math.abs(df)) + ')' : ''}</b></div>`; }).join('')}</div>`;
   $('#wg').onclick = weigh;
+}
+
+function foodWeek() {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(today(), i - 6)), rows = days.map(d => ({ d, x: S.food[d] || {} }));
+  const tk = rows.reduce((a, r) => a + fkcal(r.x), 0), ts = rows.reduce((a, r) => a + fsugar(r.x), 0), tc = FOOD.map(f => rows.reduce((a, r) => a + (r.x[f[0]] || 0), 0));
+  const burned = S.log.filter(e => e.d >= days[0]).reduce((a, e) => a + (e.kcal || 0), 0), mx = Math.max(300, ...rows.map(r => fkcal(r.x)));
+  return `<div class="card"><h2>Écarts · 7 derniers jours</h2>
+    <div class="bars food">${rows.map(r => `<div><span>${fkcal(r.x) ? big(fkcal(r.x)) : ''}</span><i style="height:${Math.max(2, fkcal(r.x) / mx * 100)}%"></i><em>${frDate(r.d, { weekday: 'short' }).replace('.', '')}</em></div>`).join('')}</div>
+    <div class="rule"><span>${FOOD.map((f, i) => `${f[1]} ${tc[i]}`).join('   ')} · ${big(ts)} g de sucre</span><b class="minus">${big(tk)} kcal</b></div>
+    <div class="rule"><span>Brûlé par tes séances</span><b class="plus">${big(burned)} kcal</b></div>
+    <p>${!tk ? 'Aucun écart noté sur 7 jours.' : tk >= burned ? `Tes écarts ont effacé tout ce que tes séances ont brûlé${tk > burned ? `, et ${big(tk - burned)} kcal de plus` : ''}.` : `Tes écarts ont repris ${Math.round(tk / burned * 100)} % de ce que tes séances ont brûlé.`}</p></div>`;
+}
+function recordsCard() {
+  const runs = S.log.filter(e => ['ok', 'late', 'extra'].includes(e.k) && e.lvl != null), outs = S.log.filter(e => e.km);
+  const maxRun = runs.reduce((a, e) => Math.max(a, ...build(e.lvl).ph.filter(p => p.t === 'run').map(p => p.d)), 0);
+  const wk = {}; outs.forEach(e => { const m = monday(e.d); wk[m] = (wk[m] || 0) + e.km; }); const bw = Math.max(0, ...Object.values(wk));
+  const far = Math.max(0, ...outs.map(e => e.km)), long = Math.max(0, ...outs.map(e => e.min || 0)), low = Math.min(...S.weights.map(w => w.kg)), clean = bestRun(S, x => ecarts(x) === 0);
+  const R = [['🏃', 'Course d’affilée', maxRun ? dur(maxRun) : '—'], ['🛣️', 'Plus longue sortie', far ? dec(far) + ' km' : '—'], ['⏱️', 'Plus long dehors', long ? long + ' min' : '—'],
+    ['📅', 'Meilleure semaine', bw ? dec(bw) + ' km' : '—'], ['🔥', 'Plus longue série', S.best + ' séance' + (S.best > 1 ? 's' : '')], ['🥗', 'Jours propres d’affilée', clean + ' j'],
+    ['⚖️', 'Poids le plus bas', dec(low) + ' kg']];
+  return `<div class="card"><h2>Records</h2><div class="recs">${R.map(r => `<div><span>${r[0]}</span><small>${r[1]}</small><b>${r[2]}</b></div>`).join('')}</div></div>`;
+}
+
+/* ---------- sauvegarde ---------- */
+function backupFile() { return new File([JSON.stringify({ app: 'course', v: 2, date: today(), data: S })], 'course-sauvegarde-' + today() + '.json', { type: 'application/json' }); }
+function backupDl() { S.lastBackup = today(); save(); const f = backupFile(), a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); render(); }
+async function backupShare() { const f = backupFile();
+  try { await navigator.share({ files: [f], title: 'Sauvegarde course' }); S.lastBackup = today(); save(); render(); } catch (e) {} }
+async function restore(f) {
+  if (!f) return; let j = null; try { j = JSON.parse(await f.text()); } catch (e) {}
+  const d = j && j.app === 'course' ? j.data : null;
+  if (!d || !Array.isArray(d.weights) || !Array.isArray(d.log)) { await modal('<div class="ico">⚠️</div><h3>Fichier illisible</h3><p>Ce n’est pas une sauvegarde de l’appli.</p><button class="btn sec" data-r="ok">OK</button>'); return; }
+  const [r] = await modal(`<div class="ico">♻️</div><h3>Restaurer ?</h3><p>Sauvegarde du ${frDate(j.date)} : ${d.done} séances, ${dec(d.weights[d.weights.length - 1].kg)} kg, ${d.points} LP. Tes données actuelles seront remplacées.</p>
+    <button class="btn run" data-r="y">Restaurer</button><button class="btn sec" data-r="n">Annuler</button>`);
+  if (r === 'y') { S = d; save(); location.reload(); }
 }
 
 /* ---------- règles ---------- */
@@ -528,6 +635,8 @@ function rulesView() {
     <div class="rule"><span>Marche active (1 bonus par jour)</span><b class="plus">+${P.walk}</b></div>
     <div class="rule"><span>Course à l’improviste un jour sans rendez-vous (1 bonus par jour)</span><b class="plus">+${P.extra}</b></div>
     <div class="rule"><span>Quête : 3 courses + 2 marches dans la semaine</span><b class="plus">+${P.quest}</b></div>
+    <div class="rule"><span>Bilan du soir : aucun écart</span><b class="plus">+${FOOD_PTS[0]}</b></div>
+    <div class="rule"><span>Bilan du soir : 1 écart</span><b class="plus">+${FOOD_PTS[1]}</b></div>
     <div class="rule"><span>Pesée du lundi (un autre jour : +${P.weigh})</span><b class="plus">+${P.weighMon}</b></div>
     <div class="rule"><span>Chaque kilo perdu (nouveau record)</span><b class="plus">+${P.kg}</b></div>
     <div class="rule"><span>Chaque division gagnée au rang forme</span><b class="plus">+${P.form}</b></div></div>
@@ -535,13 +644,22 @@ function rulesView() {
     <div class="rule"><span>Séance sautée et pas rattrapée le lendemain</span><b class="minus">−${P.miss}</b></div>
     <div class="rule"><span>… et ta série retombe à zéro</span><b class="minus">série 0</b></div>
     <div class="rule"><span>Semaine sans pesée</span><b class="minus">−${P.weighMiss}</b></div>
+    <div class="rule"><span>Bilan du soir : 3 écarts</span><b class="minus">−${-FOOD_PTS[3]}</b></div>
+    <div class="rule"><span>Bilan du soir : 4 écarts ou plus</span><b class="minus">−${-FOOD_PTS[4]}</b></div>
+    <div class="rule"><span>Bilan pas validé avant la fin du lendemain</span><b class="minus">−${P.foodMiss}</b></div>
+    <p>Un écart = un soda de 33 cl, une portion de sucreries ou un grignotage. 2 écarts dans la journée : 0 LP.</p>
     <div class="rule"><span>Reprendre du poids</span><b>0</b></div>
     <p>Un joker excuse une séance (malade, blessé, tempête). Tu en as ${S.jokers}, tu en regagnes un toutes les 4 séances, 2 au maximum.</p></div>
   <div class="card"><h2>Rang discipline</h2><p>Chaque division vaut ${DIVLP} LP, de IV à I, comme en classé. Perds des LP et tu redescends.</p><div class="ranks" style="margin-top:12px">
     ${APEX.slice().reverse().map(a => `<div class="${r.tier === a[0] ? 'me' : ''}" style="color:${a[2]}"><span>${a[0]}</span><span>${big(a[1])} LP</span></div>`).join('')}
     ${TIERS.map((t, i) => `<div class="${r.tier === t[0] ? 'me' : ''}" style="color:${t[1]}"><span>${t[0]} IV → I</span><span>${big(i * 4 * DIVLP)} LP</span></div>`).reverse().join('')}</div></div>
+  <div class="card"><h2>Sauvegarde</h2><p>Tes données ne sont que sur ce téléphone. Sauvegarde-les de temps en temps : un fichier dans tes Téléchargements, ou envoyé sur Drive ou par mail.</p>
+    <p>Dernière sauvegarde : <b style="color:var(--txt)">${S.lastBackup ? frDate(S.lastBackup) : 'jamais'}</b></p>
+    <button class="btn run" id="bkdl">Enregistrer un fichier de sauvegarde</button>${navigator.canShare ? '<button class="btn sec" id="bksh">Envoyer vers Drive, mail…</button>' : ''}
+    <button class="btn sec" id="bkin">Restaurer une sauvegarde</button><input type="file" id="bkf" accept=".json,application/json" hidden></div>
   <button class="btn ghost" id="rst" style="color:var(--mut)">Tout remettre à zéro</button>`;
   $('#ics').onclick = ics;
+  $('#bkdl').onclick = backupDl; if ($('#bksh')) $('#bksh').onclick = backupShare; $('#bkin').onclick = () => $('#bkf').click(); $('#bkf').onchange = e => restore(e.target.files[0]);
   $('#tv').onclick = async () => { for (const [k, t] of [['run', 'COURS'], ['walk', 'MARCHE'], ['half', 'DEMI-TOUR']]) { $('#tv').textContent = t; buzz(VIB[k]); await new Promise(r => setTimeout(r, VIB[k].reduce((a, b) => a + b, 0) + 1200)); } $('#tv').textContent = 'Tester les vibrations'; };
   $('#rst').onclick = async () => { const [x] = await modal(`<div class="ico">⚠️</div><h3>Tout effacer ?</h3><p>LP, séances et pesées seront perdus pour de bon.</p><button class="btn sec" data-r="n">Annuler</button><button class="btn bad" data-r="y">Tout effacer</button>`);
     if (x === 'y') { localStorage.removeItem(KEY); location.reload(); } };
@@ -576,6 +694,7 @@ async function boot() {
       <button class="btn run" data-r="y">Je signe</button>`);
     const kg = parseFloat(String(v).replace(',', '.')), hh = parseInt(h, 10); create(kg > 40 && kg < 200 ? kg : 95, hh > 130 && hh < 220 ? hh : 175);
   }
+  S.food = S.food || {}; if (!S.foodStart) { S.foodStart = today(); save(); }
   const before = S.points, lostArr = settle(), lostPts = before - S.points, a = rank(before), b = rank(S.points);
   shown = b.lp; render();
   if (S.run && S.run.day === today()) { const ses = S.run.kind === 'walk' ? buildWalk() : build(S.prog), e = ((S.run.pausedAt || Date.now()) - S.run.start - S.run.paused) / 1000 * SPEED;
